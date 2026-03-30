@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Получить версию из package.json
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Получить дату
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Собрать changelog из коммитов
+        id: changelog
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$PREV" ]; then
+            COMMITS=$(git log --pretty=format:"- %s" | head -20)
+          else
+            COMMITS=$(git log ${PREV}..HEAD --pretty=format:"- %s")
+          fi
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Создать Git тег
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.version.outputs.version }}" \
+            -m "Release v${{ steps.version.outputs.version }}" 2>/dev/null || echo "Тег уже существует"
+          git push origin "v${{ steps.version.outputs.version }}" 2>/dev/null || echo "Тег уже запушен"
+
+      - name: Сгенерировать release notes в файл
+        run: |
+          cat > /tmp/release_notes.md << 'NOTES'
+          ## mexc-sdk-js v${{ steps.version.outputs.version }}
+
+          ### Что изменилось
+          ${{ steps.changelog.outputs.commits }}
+
+          ### Установка
+          ```
+          git clone https://github.com/weidali/mexc-sdk-js.git
+          cd mexc-sdk-js
+          npm install
+          ```
+
+          ### Документация
+          https://weidali.github.io/mexc-sdk-js
+          NOTES
+
+      - name: Создать GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }} — ${{ steps.date.outputs.date }}
+          body_path: /tmp/release_notes.md
+          make_latest: true
+
+      - name: Deploy GitHub Pages
+        uses: actions/configure-pages@v4
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+      - uses: actions/deploy-pages@v4
+
+# ```bash
+#             git clone https://github.com/weidali/mexc-sdk-js.git
+#             cd mexc-sdk-js
+#             npm install
+# ```

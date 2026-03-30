@@ -157,7 +157,17 @@ git add .
 git commit -m "feat: новая фича"
 git push
 
+git checkout develop
+
+# Меняем версию (patch / minor / major)
+npm version patch   # 1.0.0 → 1.0.1
+npm version minor   # 1.0.0 → 1.1.0
+npm version major   # 1.0.0 → 2.0.0
+
+git push origin develop
+
 # Когда готово — мержим в main через PR или локально
+# Мержим в main — Actions создаст релиз и задеплоит Pages
 git checkout main
 git merge develop
 git push          # ← триггерит GitHub Actions → обновляет страницу
