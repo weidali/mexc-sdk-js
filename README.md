@@ -182,6 +182,15 @@ npm run serve
 npm run dev
 ```
 
+**Как это работает:**
+```
+Браузер ←→ serve.js (localhost:3000) ←→ MEXC API
+                ↕
+           FuturesWS (WebSocket к MEXC)
+                ↕ SSE
+           Браузер (EventSource)
+```
+
 ## Лицензия
 
 MIT

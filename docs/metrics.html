@@ -729,59 +729,240 @@
 </div>
 
 <script>
-// --- Данные сделок (из реального вывода npm run futures) ---
-const trades = [
-  { time: '30.03 22:56', side: 1, price: 66514,   vol: 50, profit: 0,       pnlRate: 0,       fee: 0.133,  type: 5 },
-  { time: '30.03 22:29', side: 2, price: 66252.6,  vol: 50, profit: 4.208,   pnlRate: 0.2508,  fee: 0.1325, type: 5 },
-  { time: '30.03 20:18', side: 3, price: 67094.2,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1341, type: 5 },
-  { time: '30.03 17:48', side: 2, price: 67298.2,  vol: 50, profit: 1.4983,  pnlRate: 0.0886,  fee: 0.1335, type: 5 },
-  { time: '30.03 16:50', side: 3, price: 67597.9,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1351, type: 5 },
-  { time: '30.03 16:50', side: 4, price: 67596.3,  vol: 50, profit: -2.3415, pnlRate: -0.1376, fee: 0.1351, type: 5 },
-  { time: '30.03 16:23', side: 1, price: 68064.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1361, type: 5 },
-  { time: '27.03 11:35', side: 2, price: 67882.7,  vol: 50, profit: 2.2595,  pnlRate: 0.1322,  fee: 0.1357, type: 5 },
-  { time: '27.03 11:21', side: 3, price: 68334.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1366, type: 5 },
-  { time: '26.03 18:20', side: 2, price: 68886.1,  vol: 60, profit: 2.73558, pnlRate: 0.1315,  fee: 0.1653, type: 5 },
-  { time: '26.03 16:30', side: 3, price: 69342.1,  vol: 60, profit: 0,       pnlRate: 0,       fee: 0.1664, type: 5 },
-  { time: '26.03 11:05', side: 4, price: 69991.6,  vol: 50, profit: -0.642,  pnlRate: -0.0366, fee: 0.1399, type: 5 },
-  { time: '26.03 10:54', side: 1, price: 70120,    vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1402, type: 5 },
-  { time: '26.03 10:32', side: 4, price: 69774.2,  vol: 50, profit: -0.679,  pnlRate: -0.0388, fee: 0.1395, type: 5 },
-  { time: '26.03 10:29', side: 1, price: 69910,    vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1398, type: 5 },
-  { time: '26.03 10:28', side: 4, price: 69941.4,  vol: 50, profit: 0.174,   pnlRate: 0.0099,  fee: 0.1398, type: 5 },
-  { time: '26.03 10:21', side: 1, price: 69906.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1398, type: 5 },
-  { time: '24.03 23:29', side: 4, price: 69915.4,  vol: 50, profit: -1.4735, pnlRate: -0.0839, fee: 0.1398, type: 5 },
-  { time: '24.03 23:27', side: 1, price: 70210.1,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1404, type: 5 },
-  { time: '24.03 23:26', side: 2, price: 70009.5,  vol: 50, profit: -2.9985, pnlRate: -0.1727, fee: 0.14,   type: 5 },
-];
+const API = (path) => fetch(path).then(r => r.json()).then(d => d.ok ? d.data : Promise.reject(d.error));
+const SYMBOL = 'BTC_USDT';
+const openPrice = 66514; // обновляется из позиции
+let position = null;
+let lastPrice = 0;
 
+// --- Утилиты ---
+function fmt(n, d=2) { return Number(n).toLocaleString('ru-RU', {minimumFractionDigits:d, maximumFractionDigits:d}); }
+function sign(n) { return n >= 0 ? '+' : ''; }
+function cls(n) { return n >= 0 ? 'up' : 'down'; }
+
+// --- Загрузка данных ---
+async function loadTicker() {
+  try {
+    const t = await API(`/api/ticker?symbol=${SYMBOL}`);
+    lastPrice = t.lastPrice;
+    document.getElementById('tPrice').textContent  = '$' + fmt(t.lastPrice, 1);
+    document.getElementById('tFair').textContent   = '$' + fmt(t.fairPrice, 1);
+    const ch = t.riseFallRate * 100;
+    const chEl = document.getElementById('tChange');
+    chEl.textContent  = sign(ch) + fmt(ch) + '%';
+    chEl.className    = 'ticker-change ' + cls(ch);
+    updatePnl();
+  } catch(e) { console.error('ticker:', e); }
+}
+
+async function loadAssets() {
+  try {
+    const assets = await API('/api/assets');
+    const usdt = assets.find(a => a.currency === 'USDT');
+    if (!usdt) return;
+    document.getElementById('tEquity').textContent  = fmt(usdt.equity);
+    document.getElementById('tAvail').textContent   = fmt(usdt.availableBalance);
+    document.getElementById('balEquity').textContent = fmt(usdt.equity);
+    document.getElementById('balAvail').textContent  = fmt(usdt.availableBalance);
+    document.getElementById('balUnreal').textContent = sign(usdt.unrealized) + fmt(usdt.unrealized);
+    document.getElementById('balUnreal').className   = cls(usdt.unrealized);
+  } catch(e) { console.error('assets:', e); }
+}
+
+async function loadPositions() {
+  try {
+    const positions = await API(`/api/positions?symbol=${SYMBOL}`);
+    if (!positions || positions.length === 0) {
+      document.querySelector('.pos-side').textContent = 'НЕТ';
+      document.querySelector('.pos-side').className = 'pos-side badge-gray';
+      return;
+    }
+    position = positions[0];
+    const p = position;
+    const isLong = p.positionType === 1;
+
+    document.querySelector('.pos-side').textContent = isLong ? 'LONG' : 'SHORT';
+    document.querySelector('.pos-side').className = 'pos-side ' + (isLong ? 'pos-long' : 'pos-short');
+
+    document.querySelectorAll('.pos-row .v')[0].textContent = p.symbol;
+    document.querySelectorAll('.pos-row .v')[1].textContent = 'x' + p.leverage;
+    document.querySelectorAll('.pos-row .v')[2].textContent = p.holdVol + ' контр.';
+    document.querySelectorAll('.pos-row .v')[3].textContent = '$' + fmt(p.openAvgPrice, 1);
+    document.querySelectorAll('.pos-row .v')[4].textContent = '$' + fmt(p.liquidatePrice, 1);
+    document.querySelectorAll('.pos-row .v')[5].textContent = fmt(p.im, 4) + ' USDT';
+    document.querySelectorAll('.pos-row .v')[6].textContent = fmt(p.marginRatio * 100) + '%';
+
+    updatePnl();
+  } catch(e) { console.error('positions:', e); }
+}
+
+function updatePnl() {
+  if (!position || !lastPrice) return;
+  const p = position;
+  const dir = p.positionType === 1 ? 1 : -1;
+  const pnl = dir * (lastPrice - p.openAvgPrice) * p.holdVol / p.openAvgPrice;
+  const margin = (p.holdVol * p.openAvgPrice) / p.leverage;
+  const pct = pnl / margin * 100;
+
+  // Ticker
+  const tPnl = document.getElementById('tPnl');
+  tPnl.textContent = sign(pnl) + fmt(pnl, 4);
+  tPnl.className = 'ticker-value ' + cls(pnl);
+  const tPct = document.getElementById('tPnlPct');
+  tPct.textContent = sign(pct) + fmt(pct) + '%';
+  tPct.className = cls(pnl);
+
+  // Позиция
+  const posEl = document.getElementById('posUnreal');
+  posEl.textContent = sign(pnl) + fmt(pnl, 2) + ' USDT';
+  posEl.className = 'v ' + cls(pnl);
+
+  document.getElementById('posCurrent').textContent = fmt(lastPrice, 1);
+
+  // Margin bar
+  const liq = p.liquidatePrice;
+  const range = lastPrice - liq;
+  const safe = Math.max(0, Math.min(100, (range / (lastPrice * 0.08)) * 100));
+  document.getElementById('marginFill').style.width = safe + '%';
+}
+
+async function loadOrders() {
+  try {
+    const orders = await API(`/api/orders?symbol=${SYMBOL}&limit=20`);
+    const list = Array.isArray(orders) ? orders : [];
+    renderTrades(list);
+    drawChart(list);
+    calcStats(list);
+  } catch(e) { console.error('orders:', e); }
+}
+
+async function loadFunding() {
+  try {
+    const fr = await API(`/api/funding?symbol=${SYMBOL}`);
+    document.getElementById('fundingIndex').textContent = '$' + fmt(fr.indexPrice || lastPrice + 30, 0);
+    // rate
+    const rateEl = document.querySelectorAll('.funding-row .v, .ticker-sub')[0];
+  } catch(e) { console.error('funding:', e); }
+}
+
+// --- SSE — live данные из WebSocket ---
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'ticker') {
+      const t = msg.data;
+      lastPrice = t.lastPrice;
+      const priceEl = document.getElementById('tPrice');
+      const prev = parseFloat(priceEl.textContent.replace(/[^0-9.,]/g,'').replace(',','.'));
+      priceEl.className = 'ticker-value ' + (t.lastPrice > prev ? 'flash-g' : 'flash-r');
+      priceEl.textContent = '$' + fmt(t.lastPrice, 1);
+      document.getElementById('tFair').textContent = '$' + fmt(t.fairPrice, 1);
+      const ch = t.riseFallRate * 100;
+      const chEl = document.getElementById('tChange');
+      chEl.textContent = sign(ch) + fmt(ch) + '%';
+      chEl.className   = 'ticker-change ' + cls(ch);
+      updatePnl();
+    }
+
+    if (msg.type === 'position') {
+      const pos = Array.isArray(msg.data) ? msg.data[0] : msg.data;
+      if (pos && pos.symbol === SYMBOL) {
+        position = pos.holdVol > 0 ? pos : null;
+        loadPositions();
+      }
+    }
+
+    if (msg.type === 'asset') {
+      loadAssets();
+    }
+
+    if (msg.type === 'deal') {
+      const d = Array.isArray(msg.data) ? msg.data[0] : msg.data;
+      if (d && d.symbol === SYMBOL) {
+        // Перезагружаем историю при новой сделке
+        loadOrders();
+      }
+    }
+  };
+
+  es.onerror = () => {
+    console.log('SSE переподключение...');
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+// --- Таблица сделок ---
 const SIDE_LABEL = { 1: 'BUY LONG', 2: 'SELL SHORT', 3: 'BUY (close)', 4: 'SELL (close)' };
 const SIDE_CLASS = { 1: 'side-long', 2: 'side-short', 3: 'side-long', 4: 'side-short' };
 
-// --- Рендер таблицы ---
-function renderTrades() {
+function renderTrades(orders) {
   const tbody = document.getElementById('tradesBody');
-  tbody.innerHTML = trades.map(t => {
-    const hasPnl = t.profit !== 0;
+  tbody.innerHTML = orders.map(o => {
+    const hasPnl = o.profit !== 0;
+    const time = new Date(o.createTime).toLocaleString('ru-RU', {
+      month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+    });
     const pnlStr = hasPnl
-      ? `<span class="${t.profit > 0 ? 'pnl-pos' : 'pnl-neg'}">${t.profit > 0 ? '+' : ''}${t.profit.toFixed(4)}</span>`
+      ? `<span class="${o.profit > 0 ? 'pnl-pos' : 'pnl-neg'}">${sign(o.profit)}${fmt(o.profit, 4)}</span>`
       : '<span style="color:var(--text3)">—</span>';
-    const pctStr = hasPnl
-      ? `<span class="${t.pnlRate > 0 ? 'pnl-pos' : 'pnl-neg'}">${t.pnlRate > 0 ? '+' : ''}${(t.pnlRate * 100).toFixed(2)}%</span>`
+    const pctStr = hasPnl && o.pnlRate
+      ? `<span class="${o.pnlRate > 0 ? 'pnl-pos' : 'pnl-neg'}">${sign(o.pnlRate)}${fmt(o.pnlRate * 100)}%</span>`
       : '<span style="color:var(--text3)">—</span>';
     return `<tr>
-      <td style="color:var(--text3)">${t.time}</td>
-      <td class="${SIDE_CLASS[t.side]}">${SIDE_LABEL[t.side]}</td>
-      <td style="color:var(--text)">$${t.price.toLocaleString()}</td>
-      <td>${t.vol}</td>
+      <td style="color:var(--text3)">${time}</td>
+      <td class="${SIDE_CLASS[o.side] || ''}">${SIDE_LABEL[o.side] || o.side}</td>
+      <td style="color:var(--text)">$${fmt(o.dealAvgPrice || o.price, 1)}</td>
+      <td>${o.vol}</td>
       <td>${pnlStr}</td>
       <td>${pctStr}</td>
-      <td style="color:var(--text3)">-${t.fee.toFixed(4)}</td>
+      <td style="color:var(--text3)">-${fmt(o.totalFee, 4)}</td>
       <td style="color:var(--text3)">MARKET</td>
     </tr>`;
   }).join('');
 }
 
-// --- P&L chart (canvas) ---
-function drawChart() {
+// --- Статистика ---
+function calcStats(orders) {
+  const closed = orders.filter(o => o.profit !== 0);
+  const wins   = closed.filter(o => o.profit > 0);
+  const losses = closed.filter(o => o.profit < 0);
+  const total  = closed.length;
+  const winRate = total ? Math.round(wins.length / total * 100) : 0;
+  const avgWin  = wins.length   ? wins.reduce((s,o)=>s+o.profit,0) / wins.length   : 0;
+  const avgLoss = losses.length ? losses.reduce((s,o)=>s+o.profit,0) / losses.length : 0;
+  const totalPnl = closed.reduce((s,o)=>s+o.profit,0);
+  const totalFee = orders.reduce((s,o)=>s+o.totalFee,0);
+  const pf = losses.length && avgLoss !== 0 ? Math.abs(avgWin * wins.length / (avgLoss * losses.length)) : 0;
+
+  // Ring
+  const circle = document.getElementById('winRing');
+  const circumference = 226.2;
+  circle.setAttribute('stroke-dashoffset', circumference - (circumference * winRate / 100));
+  circle.previousElementSibling.nextElementSibling?.remove();
+  const text = circle.parentNode.querySelector('text');
+  if (text) text.textContent = winRate + '%';
+
+  // Stats
+  const rows = document.querySelectorAll('.ring-stat-row .v');
+  if (rows[0]) rows[0].textContent = wins.length;
+  if (rows[1]) rows[1].textContent = losses.length;
+  if (rows[2]) { rows[2].textContent = sign(avgWin) + fmt(avgWin, 4) + ' USDT'; rows[2].className = 'v up'; }
+  if (rows[3]) { rows[3].textContent = fmt(avgLoss, 4) + ' USDT'; rows[3].className = 'v down'; }
+  if (rows[4]) rows[4].textContent = fmt(pf);
+  if (rows[5]) rows[5].textContent = '-' + fmt(totalFee, 4) + ' USDT';
+
+  // Badge total pnl
+  const badge = document.querySelector('.card-header .badge-green');
+  if (badge) badge.textContent = sign(totalPnl) + fmt(totalPnl, 2) + ' USDT  (Cumulative)';
+  const badgeCnt = document.querySelector('.card-header .badge-yellow');
+  if (badgeCnt) badgeCnt.textContent = total + ' сделок';
+}
+
+// --- P&L Chart ---
+function drawChart(orders) {
   const canvas = document.getElementById('pnlChart');
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.offsetWidth;
@@ -790,186 +971,98 @@ function drawChart() {
   canvas.height = H * dpr;
   canvas.style.width  = W + 'px';
   canvas.style.height = H + 'px';
-
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
 
-  // Накопительный P&L
-  const closedTrades = trades.filter(t => t.profit !== 0);
+  const closed = (orders || []).filter(o => o.profit !== 0).reverse();
   let cum = 0;
-  const points = closedTrades.map(t => { cum += t.profit; return cum; }).reverse();
-  points.unshift(0);
+  const points = [0, ...closed.map(o => { cum += o.profit; return cum; })];
 
-  const pad = { l: 10, r: 10, t: 16, b: 24 };
+  if (points.length < 2) { ctx.fillStyle='var(--text3)'; ctx.font='12px JetBrains Mono'; ctx.fillText('Нет данных', W/2-30, H/2); return; }
+
+  const pad = { l:12, r:12, t:20, b:20 };
   const cW = W - pad.l - pad.r;
   const cH = H - pad.t - pad.b;
-
-  const min = Math.min(0, ...points) - 0.5;
-  const max = Math.max(...points) + 0.5;
-  const range = max - min;
-
+  const min = Math.min(0, ...points) - 0.2;
+  const max = Math.max(...points) + 0.2;
+  const range = max - min || 1;
   const xStep = cW / (points.length - 1);
   const yScale = v => pad.t + cH - ((v - min) / range) * cH;
 
-  // Grid lines
-  ctx.strokeStyle = '#1e2530';
-  ctx.lineWidth = 1;
+  // Grid
+  ctx.strokeStyle = '#1e2530'; ctx.lineWidth = 1;
   [0, 0.25, 0.5, 0.75, 1].forEach(p => {
     const y = pad.t + cH * p;
-    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cW, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l+cW, y); ctx.stroke();
   });
 
-  // Zero line
-  const zeroY = yScale(0);
-  ctx.strokeStyle = '#3a4655';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.moveTo(pad.l, zeroY); ctx.lineTo(pad.l + cW, zeroY); ctx.stroke();
+  // Zero
+  const zY = yScale(0);
+  ctx.strokeStyle='#3a4655'; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(pad.l, zY); ctx.lineTo(pad.l+cW, zY); ctx.stroke();
   ctx.setLineDash([]);
 
-  // Area gradient
-  const lastVal = points[points.length - 1];
-  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH);
-  if (lastVal >= 0) {
-    grad.addColorStop(0, 'rgba(0,217,126,0.25)');
-    grad.addColorStop(1, 'rgba(0,217,126,0.01)');
-  } else {
-    grad.addColorStop(0, 'rgba(255,77,106,0.01)');
-    grad.addColorStop(1, 'rgba(255,77,106,0.25)');
-  }
+  const lastVal = points[points.length-1];
+  const color = lastVal >= 0 ? '#00d97e' : '#ff4d6a';
 
+  // Area
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t+cH);
+  grad.addColorStop(0, lastVal >= 0 ? 'rgba(0,217,126,0.2)' : 'rgba(255,77,106,0.2)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.beginPath();
   ctx.moveTo(pad.l, yScale(points[0]));
-  points.forEach((v, i) => { ctx.lineTo(pad.l + i * xStep, yScale(v)); });
-  ctx.lineTo(pad.l + (points.length - 1) * xStep, pad.t + cH);
-  ctx.lineTo(pad.l, pad.t + cH);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
+  points.forEach((v,i) => ctx.lineTo(pad.l+i*xStep, yScale(v)));
+  ctx.lineTo(pad.l+(points.length-1)*xStep, pad.t+cH);
+  ctx.lineTo(pad.l, pad.t+cH);
+  ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
 
   // Line
   ctx.beginPath();
   ctx.moveTo(pad.l, yScale(points[0]));
-  points.forEach((v, i) => { ctx.lineTo(pad.l + i * xStep, yScale(v)); });
-  ctx.strokeStyle = lastVal >= 0 ? '#00d97e' : '#ff4d6a';
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
+  points.forEach((v,i) => ctx.lineTo(pad.l+i*xStep, yScale(v)));
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
 
-  // Dots on closed trades
-  closedTrades.reverse().forEach((t, i) => {
-    const cum2 = points[i + 1];
-    const x = pad.l + (i + 1) * xStep;
-    const y = yScale(cum2);
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fillStyle = t.profit >= 0 ? '#00d97e' : '#ff4d6a';
-    ctx.fill();
+  // Dots
+  closed.forEach((o, i) => {
+    const x = pad.l + (i+1) * xStep;
+    const y = yScale(points[i+1]);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI*2);
+    ctx.fillStyle = o.profit >= 0 ? '#00d97e' : '#ff4d6a'; ctx.fill();
   });
 
-  // Labels
-  ctx.fillStyle = '#3a4655';
-  ctx.font = '10px JetBrains Mono';
-  ctx.textAlign = 'right';
-  ctx.fillText(max.toFixed(1), pad.l - 2, pad.t + 4);
-  ctx.fillText(min.toFixed(1), pad.l - 2, pad.t + cH);
-  ctx.textAlign = 'center';
-  ctx.fillText('0', pad.l - 2, zeroY + 4);
-
-  // Last value label
-  const lastX = pad.l + (points.length - 1) * xStep;
-  const lastY = yScale(lastVal);
-  ctx.fillStyle = lastVal >= 0 ? '#00d97e' : '#ff4d6a';
-  ctx.font = 'bold 11px JetBrains Mono';
-  ctx.textAlign = 'right';
-  ctx.fillText((lastVal >= 0 ? '+' : '') + lastVal.toFixed(2), lastX, lastY - 6);
-}
-
-// --- Live price simulation ---
-const openPrice = 66514;
-let currentPrice = openPrice;
-let lastTickerPrice = currentPrice;
-
-function simPrice() {
-  currentPrice += (Math.random() - 0.5) * 25;
-
-  const priceEl  = document.getElementById('tPrice');
-  const pnlEl    = document.getElementById('tPnl');
-  const pnlPctEl = document.getElementById('tPnlPct');
-  const changeEl = document.getElementById('tChange');
-  const fairEl   = document.getElementById('tFair');
-  const posEl    = document.getElementById('posUnreal');
-  const posCur   = document.getElementById('posCurrent');
-  const balUnr   = document.getElementById('balUnreal');
-  const balEq    = document.getElementById('balEquity');
-  const tEq      = document.getElementById('tEquity');
-  const tAv      = document.getElementById('tAvail');
-  const funIdx   = document.getElementById('fundingIndex');
-  const marginFill = document.getElementById('marginFill');
-
-  const up = currentPrice > lastTickerPrice;
-  priceEl.className = 'ticker-value ' + (up ? 'flash-g' : 'flash-r');
-  priceEl.textContent = '$' + currentPrice.toLocaleString('ru-RU', {minimumFractionDigits:1, maximumFractionDigits:1});
-  fairEl.textContent = '$' + (currentPrice - 1.5).toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
-
-  const change = ((currentPrice - 67530) / 67530 * 100);
-  changeEl.className = 'ticker-change ' + (change >= 0 ? 'up' : 'down');
-  changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(2) + '%';
-
-  // P&L
-  const pnl = (currentPrice - openPrice) * 50 / openPrice;
-  const margin = (50 * openPrice) / 20;
-  const pct = (pnl / margin * 100);
-  pnlEl.className    = 'ticker-value ' + (pnl >= 0 ? 'up' : 'down');
-  pnlEl.textContent  = (pnl >= 0 ? '+' : '') + pnl.toFixed(4);
-  pnlPctEl.className = pnl >= 0 ? 'up' : 'down';
-  pnlPctEl.textContent = (pnl >= 0 ? '+' : '') + pct.toFixed(2) + '%';
-
-  posEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT';
-  posEl.className = 'v ' + (pnl >= 0 ? 'up' : 'down');
-  posCur.textContent = currentPrice.toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
-
-  const equity = 12.46 + pnl + (pnl * 0.1);
-  balUnr.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
-  balUnr.className   = pnl >= 0 ? 'up' : 'down';
-  balEq.textContent  = (12.46 + pnl).toFixed(2);
-  tEq.textContent    = (12.46 + pnl).toFixed(2);
-  tAv.textContent    = '12.46';
-  funIdx.textContent = '$' + (currentPrice + 30).toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
-
-  // Margin bar: 63253 → liquidation, range to current
-  const liq = 63253.5;
-  const full = currentPrice - liq;
-  const dist = currentPrice - liq;
-  const pct2 = Math.min(100, Math.max(0, (dist / (currentPrice * 0.1)) * 100));
-  marginFill.style.width = pct2 + '%';
-
-  lastTickerPrice = currentPrice;
-  setTimeout(simPrice, 900 + Math.random() * 400);
+  // Last label
+  ctx.fillStyle=color; ctx.font='bold 11px JetBrains Mono'; ctx.textAlign='right';
+  ctx.fillText(sign(lastVal)+fmt(lastVal,2), pad.l+(points.length-1)*xStep, yScale(lastVal)-6);
 }
 
 // --- Funding countdown ---
 function updateFundingCountdown() {
   const now = new Date();
-  const nextFunding = new Date(now);
-  nextFunding.setHours(Math.ceil(now.getHours() / 8) * 8, 0, 0, 0);
-  if (nextFunding <= now) nextFunding.setHours(nextFunding.getHours() + 8);
-  const diff = Math.max(0, nextFunding - now);
-  const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
-  const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
-  const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+  const next = new Date(now);
+  next.setHours(Math.ceil(now.getHours()/8)*8, 0, 0, 0);
+  if (next <= now) next.setHours(next.getHours()+8);
+  const diff = Math.max(0, next - now);
+  const h = String(Math.floor(diff/3600000)).padStart(2,'0');
+  const m = String(Math.floor((diff%3600000)/60000)).padStart(2,'0');
+  const s = String(Math.floor((diff%60000)/1000)).padStart(2,'0');
   const cd = `${h}:${m}:${s}`;
   document.getElementById('fundingCountdown').textContent = cd;
   document.getElementById('tFundingCd').textContent = cd;
 }
 
-// Init
-renderTrades();
-drawChart();
-simPrice();
-setInterval(updateFundingCountdown, 1000);
-updateFundingCountdown();
-window.addEventListener('resize', drawChart);
+// --- Init ---
+async function init() {
+  await Promise.all([loadTicker(), loadAssets(), loadPositions(), loadOrders(), loadFunding()]);
+  connectSSE();
+  setInterval(loadTicker,   5000);
+  setInterval(loadAssets,  15000);
+  setInterval(loadFunding, 60000);
+  setInterval(updateFundingCountdown, 1000);
+  updateFundingCountdown();
+  window.addEventListener('resize', () => loadOrders());
+}
+
+init();
 </script>
 </body>
 </html>
