@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Metrics — mexc-sdk-js</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f;
+    --bg2: #0f1217;
+    --bg3: #141820;
+    --border: #1e2530;
+    --border2: #262f3d;
+    --green: #00d97e;
+    --green-dim: rgba(0,217,126,0.10);
+    --red: #ff4d6a;
+    --red-dim: rgba(255,77,106,0.10);
+    --yellow: #f5c542;
+    --blue: #3d8ef5;
+    --blue-dim: rgba(61,142,245,0.08);
+    --text: #e2e8f0;
+    --text2: #7a8899;
+    --text3: #3a4655;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.025) 2px, rgba(0,0,0,0.025) 4px);
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+  }
+
+  .logo-icon {
+    width: 28px; height: 28px;
+    background: var(--green);
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #000;
+  }
+
+  .logo-text {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .logo-text span { color: var(--green); }
+
+  nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  nav a {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text2);
+    text-decoration: none;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+
+  nav a:hover { color: var(--text); background: rgba(255,255,255,0.04); }
+  nav a.active { color: var(--green); background: var(--green-dim); border-color: rgba(0,217,126,0.2); }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--green-dim);
+    border: 1px solid rgba(0,217,126,0.2);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--green);
+    letter-spacing: 0.5px;
+  }
+
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* Layout */
+  .container { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* Top ticker bar */
+  .ticker-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+
+  .ticker-item {
+    flex: 1;
+    padding: 14px 20px;
+    border-right: 1px solid var(--border);
+    position: relative;
+  }
+
+  .ticker-item:last-child { border-right: none; }
+
+  .ticker-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }
+
+  .ticker-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.5px;
+    transition: color 0.3s;
+  }
+
+  .ticker-sub {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 3px;
+  }
+
+  .ticker-change { font-weight: 600; }
+  .up   { color: var(--green); }
+  .down { color: var(--red); }
+
+  @keyframes flashG { 0%{color:var(--green)} 100%{color:var(--text)} }
+  @keyframes flashR { 0%{color:var(--red)}   100%{color:var(--text)} }
+  .flash-g { animation: flashG 0.5s ease-out; }
+  .flash-r { animation: flashR 0.5s ease-out; }
+
+  /* Grid layouts */
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .grid-chart { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px; }
+  .full { margin-bottom: 14px; }
+
+  /* Card */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.015);
+  }
+
+  .card-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .card-body { padding: 16px; }
+
+  /* Stat blocks */
+  .stat-big {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    color: var(--text2);
+    letter-spacing: 0.5px;
+  }
+
+  .stat-sub {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 4px;
+  }
+
+  /* Position card */
+  .pos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .pos-side {
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 12px;
+    border-radius: 5px;
+  }
+
+  .pos-long  { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,217,126,0.25); }
+  .pos-short { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,77,106,0.25); }
+
+  .pos-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+  }
+
+  .pos-row:last-child { border-bottom: none; }
+  .pos-row .k { color: var(--text2); }
+  .pos-row .v { color: var(--text); font-weight: 500; }
+
+  /* Margin bar */
+  .margin-bar-wrap { margin-top: 10px; }
+  .margin-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text2);
+    margin-bottom: 5px;
+  }
+
+  .margin-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .margin-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--green), var(--yellow));
+    transition: width 0.5s ease;
+  }
+
+  /* SVG Chart */
+  .chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 180px;
+  }
+
+  canvas#pnlChart {
+    width: 100%;
+    height: 180px;
+  }
+
+  /* Trades table */
+  .trades-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .trades-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .trades-table td {
+    padding: 9px 12px;
+    font-size: 11.5px;
+    border-bottom: 1px solid rgba(255,255,255,0.025);
+    color: var(--text2);
+    transition: background 0.15s;
+  }
+
+  .trades-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .trades-table tr:last-child td { border-bottom: none; }
+
+  .side-long  { color: var(--green); font-weight: 600; }
+  .side-short { color: var(--red);   font-weight: 600; }
+  .pnl-pos { color: var(--green); font-weight: 600; }
+  .pnl-neg { color: var(--red);   font-weight: 600; }
+
+  /* Win rate ring */
+  .ring-wrap {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .ring-svg { flex-shrink: 0; }
+
+  .ring-stats { flex: 1; }
+
+  .ring-stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+
+  .ring-stat-row:last-child { border-bottom: none; }
+  .ring-stat-row .k { color: var(--text2); }
+  .ring-stat-row .v { font-weight: 600; }
+
+  /* Balance bars */
+  .balance-item {
+    margin-bottom: 14px;
+  }
+
+  .balance-item:last-child { margin-bottom: 0; }
+
+  .balance-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 12px;
+  }
+
+  .balance-currency { color: var(--text); font-weight: 600; }
+  .balance-value    { color: var(--text2); }
+
+  .balance-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .balance-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s ease;
+  }
+
+  /* Funding countdown */
+  .funding-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-size: 12px;
+  }
+
+  .funding-row:last-child { border-bottom: none; }
+
+  .countdown {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--yellow);
+    letter-spacing: 2px;
+  }
+
+  /* Badge */
+  .badge {
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .badge-green { background: var(--green-dim); color: var(--green); border: 1px solid rgba(0,217,126,0.2); }
+  .badge-red   { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,77,106,0.2); }
+  .badge-gray  { background: rgba(255,255,255,0.04); color: var(--text2); border: 1px solid var(--border); }
+  .badge-yellow { background: rgba(245,197,66,0.1); color: var(--yellow); border: 1px solid rgba(245,197,66,0.2); }
+
+  /* Future placeholder */
+  .future-card {
+    background: var(--bg2);
+    border: 1px dashed var(--border2);
+    border-radius: 10px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-align: center;
+    min-height: 120px;
+  }
+
+  .future-icon { font-size: 24px; opacity: 0.4; }
+  .future-title { font-size: 12px; font-weight: 600; color: var(--text2); }
+  .future-sub { font-size: 10px; color: var(--text3); }
+
+  @media (max-width: 900px) {
+    .grid-3, .grid-2, .grid-chart { grid-template-columns: 1fr; }
+    .ticker-bar { flex-wrap: wrap; }
+    .ticker-item { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a class="logo" href="index.html">
+    <div class="logo-icon">M</div>
+    <div class="logo-text">mexc-sdk<span>-js</span></div>
+  </a>
+  <nav>
+    <a href="index.html">Документация</a>
+    <a href="metrics.html" class="active">Метрики</a>
+  </nav>
+  <div class="header-right">
+    <div class="live-badge"><div class="live-dot"></div>DEMO</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Ticker bar -->
+  <div class="ticker-bar">
+    <div class="ticker-item">
+      <div class="ticker-label">BTC/USDT · Last Price</div>
+      <div class="ticker-value" id="tPrice">$66 514.0</div>
+      <div class="ticker-sub"><span class="ticker-change down" id="tChange">-1.13%</span> за 24ч &nbsp;·&nbsp; Fair: <span id="tFair">$66 512</span></div>
+    </div>
+    <div class="ticker-item">
+      <div class="ticker-label">Unrealized P&L</div>
+      <div class="ticker-value up" id="tPnl">+1.7420</div>
+      <div class="ticker-sub">USDT &nbsp;·&nbsp; <span id="tPnlPct" class="up">+10.39%</span> от маржи</div>
+    </div>
+    <div class="ticker-item">
+      <div class="ticker-label">Equity (USDT)</div>
+      <div class="ticker-value" id="tEquity">30.95</div>
+      <div class="ticker-sub">Доступно: <span id="tAvail">12.46</span> USDT</div>
+    </div>
+    <div class="ticker-item">
+      <div class="ticker-label">Funding Rate</div>
+      <div class="ticker-value" style="color:var(--yellow)">0.0007%</div>
+      <div class="ticker-sub">Следующий: <span id="tFundingCd">02:47:33</span></div>
+    </div>
+    <div class="ticker-item" style="border-right:none">
+      <div class="ticker-label">24h Volume</div>
+      <div class="ticker-value">213.2M</div>
+      <div class="ticker-sub">контрактов BTC_USDT</div>
+    </div>
+  </div>
+
+  <!-- P&L Chart + Win Rate -->
+  <div class="grid-chart">
+    <!-- P&L Chart -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📈 P&L по сделкам</div>
+        <div style="display:flex;gap:6px">
+          <span class="badge badge-green">累计 +7.76 USDT</span>
+          <span class="badge badge-gray">последние 20</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding:12px 16px">
+        <canvas id="pnlChart" height="180"></canvas>
+      </div>
+    </div>
+
+    <!-- Win rate ring -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🎯 Win Rate</div>
+        <span class="badge badge-yellow">20 сделок</span>
+      </div>
+      <div class="card-body">
+        <div class="ring-wrap">
+          <svg class="ring-svg" width="90" height="90" viewBox="0 0 90 90">
+            <circle cx="45" cy="45" r="36" fill="none" stroke="var(--border)" stroke-width="8"/>
+            <circle cx="45" cy="45" r="36" fill="none" stroke="var(--green)" stroke-width="8"
+              stroke-dasharray="226.2" stroke-dashoffset="79" stroke-linecap="round"
+              transform="rotate(-90 45 45)" id="winRing"/>
+            <text x="45" y="49" text-anchor="middle" fill="var(--text)" font-family="JetBrains Mono" font-size="15" font-weight="700">65%</text>
+          </svg>
+          <div class="ring-stats">
+            <div class="ring-stat-row">
+              <span class="k">Прибыльных</span>
+              <span class="v up">13</span>
+            </div>
+            <div class="ring-stat-row">
+              <span class="k">Убыточных</span>
+              <span class="v down">7</span>
+            </div>
+            <div class="ring-stat-row">
+              <span class="k">Avg win</span>
+              <span class="v up">+2.84 USDT</span>
+            </div>
+            <div class="ring-stat-row">
+              <span class="k">Avg loss</span>
+              <span class="v down">-1.62 USDT</span>
+            </div>
+            <div class="ring-stat-row">
+              <span class="k">Profit factor</span>
+              <span class="v" style="color:var(--yellow)">2.28</span>
+            </div>
+            <div class="ring-stat-row">
+              <span class="k">Комиссии</span>
+              <span class="v" style="color:var(--text2)">-2.74 USDT</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-3">
+    <!-- Открытая позиция -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 Открытая позиция</div>
+        <span class="pos-side pos-long">LONG</span>
+      </div>
+      <div class="card-body">
+        <div class="pos-row"><span class="k">Символ</span><span class="v">BTC_USDT</span></div>
+        <div class="pos-row"><span class="k">Плечо</span><span class="v" style="color:var(--yellow)">x20</span></div>
+        <div class="pos-row"><span class="k">Объём</span><span class="v">50 контр.</span></div>
+        <div class="pos-row"><span class="k">Цена входа</span><span class="v">$66 514</span></div>
+        <div class="pos-row"><span class="k">Ликв. цена</span><span class="v" style="color:var(--red)">$63 253.5</span></div>
+        <div class="pos-row"><span class="k">Маржа (im)</span><span class="v">16.76 USDT</span></div>
+        <div class="pos-row"><span class="k">Margin ratio</span><span class="v" style="color:var(--yellow)">2.52%</span></div>
+        <div class="pos-row"><span class="k">Unrealized P&L</span><span class="v up" id="posUnreal">+1.74 USDT</span></div>
+        <div class="margin-bar-wrap">
+          <div class="margin-bar-label">
+            <span>Ликвидация</span>
+            <span>$63 253</span>
+            <span style="color:var(--green)">Текущая $<span id="posCurrent">66 514</span></span>
+          </div>
+          <div class="margin-bar">
+            <div class="margin-bar-fill" id="marginFill" style="width:48%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Баланс -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">💼 Баланс</div>
+        <span class="badge badge-gray">фьючерсы</span>
+      </div>
+      <div class="card-body">
+        <div class="balance-item">
+          <div class="balance-row">
+            <span class="balance-currency">USDT</span>
+            <span class="balance-value">Equity: <span id="balEquity">30.95</span></span>
+          </div>
+          <div class="balance-row" style="margin-top:-3px;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--text2)">Доступно: <span id="balAvail" style="color:var(--text)">12.46</span></span>
+            <span style="font-size:11px;color:var(--text2)">Unrealized: <span class="up" id="balUnreal">+1.73</span></span>
+          </div>
+          <div class="balance-bar">
+            <div class="balance-bar-fill" style="width:40%;background:linear-gradient(90deg,var(--blue),var(--green))"></div>
+          </div>
+        </div>
+        <div class="balance-item">
+          <div class="balance-row">
+            <span class="balance-currency">MX</span>
+            <span class="balance-value">Equity: 0.00114</span>
+          </div>
+          <div class="balance-row" style="margin-top:-3px;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--text2)">Доступно: 0.00114</span>
+            <span style="font-size:11px;color:var(--text2)">Frozen: 0</span>
+          </div>
+          <div class="balance-bar">
+            <div class="balance-bar-fill" style="width:2%;background:var(--yellow)"></div>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="pos-row"><span class="k">Realised P&L (сессия)</span><span class="v down">-0.133</span></div>
+          <div class="pos-row"><span class="k">Общая комиссия</span><span class="v" style="color:var(--text2)">-2.74 USDT</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Funding -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">💰 Funding Rate</div>
+        <span class="badge badge-yellow">каждые 8ч</span>
+      </div>
+      <div class="card-body">
+        <div style="text-align:center;padding:8px 0 16px">
+          <div style="font-size:10px;color:var(--text2);margin-bottom:6px;letter-spacing:1px">СЛЕДУЮЩЕЕ СПИСАНИЕ</div>
+          <div class="countdown" id="fundingCountdown">02:47:33</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:6px">Rate: <span style="color:var(--yellow);font-weight:600">+0.0007%</span></div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px">≈ <span style="color:var(--red)">-0.012 USDT</span> с вашей позиции</div>
+        </div>
+        <div class="funding-row">
+          <span class="k" style="color:var(--text2)">8 часов назад</span>
+          <span style="color:var(--yellow);font-weight:600">+0.0006%</span>
+        </div>
+        <div class="funding-row">
+          <span class="k" style="color:var(--text2)">16 часов назад</span>
+          <span style="color:var(--yellow);font-weight:600">+0.0008%</span>
+        </div>
+        <div class="funding-row">
+          <span class="k" style="color:var(--text2)">24 часа назад</span>
+          <span style="color:var(--green);font-weight:600">+0.0003%</span>
+        </div>
+        <div class="funding-row">
+          <span class="k" style="color:var(--text2)">Index price</span>
+          <span style="color:var(--text);font-weight:600" id="fundingIndex">$66 880</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- История сделок -->
+  <div class="full">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📜 История ордеров — BTC_USDT</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:11px;color:var(--text2)">npm run futures</span>
+          <span class="badge badge-gray">последние 20</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="trades-table">
+          <thead>
+            <tr>
+              <th>Время</th>
+              <th>Сторона</th>
+              <th>Цена</th>
+              <th>Кол-во</th>
+              <th>P&L</th>
+              <th>%</th>
+              <th>Комиссия</th>
+              <th>Тип</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Future metrics -->
+  <div class="grid-3">
+    <div class="future-card">
+      <div class="future-icon">📊</div>
+      <div class="future-title">Drawdown chart</div>
+      <div class="future-sub">История просадок по сессиям</div>
+      <span class="badge badge-gray" style="margin-top:4px">в разработке</span>
+    </div>
+    <div class="future-card">
+      <div class="future-icon">⚡</div>
+      <div class="future-title">WebSocket P&L stream</div>
+      <div class="future-sub">Real-time из npm run ws</div>
+      <span class="badge badge-gray" style="margin-top:4px">в разработке</span>
+    </div>
+    <div class="future-card">
+      <div class="future-icon">🔔</div>
+      <div class="future-title">Алерты</div>
+      <div class="future-sub">Уведомления при достижении P&L</div>
+      <span class="badge badge-gray" style="margin-top:4px">в разработке</span>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// --- Данные сделок (из реального вывода npm run futures) ---
+const trades = [
+  { time: '30.03 22:56', side: 1, price: 66514,   vol: 50, profit: 0,       pnlRate: 0,       fee: 0.133,  type: 5 },
+  { time: '30.03 22:29', side: 2, price: 66252.6,  vol: 50, profit: 4.208,   pnlRate: 0.2508,  fee: 0.1325, type: 5 },
+  { time: '30.03 20:18', side: 3, price: 67094.2,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1341, type: 5 },
+  { time: '30.03 17:48', side: 2, price: 67298.2,  vol: 50, profit: 1.4983,  pnlRate: 0.0886,  fee: 0.1335, type: 5 },
+  { time: '30.03 16:50', side: 3, price: 67597.9,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1351, type: 5 },
+  { time: '30.03 16:50', side: 4, price: 67596.3,  vol: 50, profit: -2.3415, pnlRate: -0.1376, fee: 0.1351, type: 5 },
+  { time: '30.03 16:23', side: 1, price: 68064.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1361, type: 5 },
+  { time: '27.03 11:35', side: 2, price: 67882.7,  vol: 50, profit: 2.2595,  pnlRate: 0.1322,  fee: 0.1357, type: 5 },
+  { time: '27.03 11:21', side: 3, price: 68334.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1366, type: 5 },
+  { time: '26.03 18:20', side: 2, price: 68886.1,  vol: 60, profit: 2.73558, pnlRate: 0.1315,  fee: 0.1653, type: 5 },
+  { time: '26.03 16:30', side: 3, price: 69342.1,  vol: 60, profit: 0,       pnlRate: 0,       fee: 0.1664, type: 5 },
+  { time: '26.03 11:05', side: 4, price: 69991.6,  vol: 50, profit: -0.642,  pnlRate: -0.0366, fee: 0.1399, type: 5 },
+  { time: '26.03 10:54', side: 1, price: 70120,    vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1402, type: 5 },
+  { time: '26.03 10:32', side: 4, price: 69774.2,  vol: 50, profit: -0.679,  pnlRate: -0.0388, fee: 0.1395, type: 5 },
+  { time: '26.03 10:29', side: 1, price: 69910,    vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1398, type: 5 },
+  { time: '26.03 10:28', side: 4, price: 69941.4,  vol: 50, profit: 0.174,   pnlRate: 0.0099,  fee: 0.1398, type: 5 },
+  { time: '26.03 10:21', side: 1, price: 69906.6,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1398, type: 5 },
+  { time: '24.03 23:29', side: 4, price: 69915.4,  vol: 50, profit: -1.4735, pnlRate: -0.0839, fee: 0.1398, type: 5 },
+  { time: '24.03 23:27', side: 1, price: 70210.1,  vol: 50, profit: 0,       pnlRate: 0,       fee: 0.1404, type: 5 },
+  { time: '24.03 23:26', side: 2, price: 70009.5,  vol: 50, profit: -2.9985, pnlRate: -0.1727, fee: 0.14,   type: 5 },
+];
+
+const SIDE_LABEL = { 1: 'BUY LONG', 2: 'SELL SHORT', 3: 'BUY (close)', 4: 'SELL (close)' };
+const SIDE_CLASS = { 1: 'side-long', 2: 'side-short', 3: 'side-long', 4: 'side-short' };
+
+// --- Рендер таблицы ---
+function renderTrades() {
+  const tbody = document.getElementById('tradesBody');
+  tbody.innerHTML = trades.map(t => {
+    const hasPnl = t.profit !== 0;
+    const pnlStr = hasPnl
+      ? `<span class="${t.profit > 0 ? 'pnl-pos' : 'pnl-neg'}">${t.profit > 0 ? '+' : ''}${t.profit.toFixed(4)}</span>`
+      : '<span style="color:var(--text3)">—</span>';
+    const pctStr = hasPnl
+      ? `<span class="${t.pnlRate > 0 ? 'pnl-pos' : 'pnl-neg'}">${t.pnlRate > 0 ? '+' : ''}${(t.pnlRate * 100).toFixed(2)}%</span>`
+      : '<span style="color:var(--text3)">—</span>';
+    return `<tr>
+      <td style="color:var(--text3)">${t.time}</td>
+      <td class="${SIDE_CLASS[t.side]}">${SIDE_LABEL[t.side]}</td>
+      <td style="color:var(--text)">$${t.price.toLocaleString()}</td>
+      <td>${t.vol}</td>
+      <td>${pnlStr}</td>
+      <td>${pctStr}</td>
+      <td style="color:var(--text3)">-${t.fee.toFixed(4)}</td>
+      <td style="color:var(--text3)">MARKET</td>
+    </tr>`;
+  }).join('');
+}
+
+// --- P&L chart (canvas) ---
+function drawChart() {
+  const canvas = document.getElementById('pnlChart');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth;
+  const H = 180;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // Накопительный P&L
+  const closedTrades = trades.filter(t => t.profit !== 0);
+  let cum = 0;
+  const points = closedTrades.map(t => { cum += t.profit; return cum; }).reverse();
+  points.unshift(0);
+
+  const pad = { l: 10, r: 10, t: 16, b: 24 };
+  const cW = W - pad.l - pad.r;
+  const cH = H - pad.t - pad.b;
+
+  const min = Math.min(0, ...points) - 0.5;
+  const max = Math.max(...points) + 0.5;
+  const range = max - min;
+
+  const xStep = cW / (points.length - 1);
+  const yScale = v => pad.t + cH - ((v - min) / range) * cH;
+
+  // Grid lines
+  ctx.strokeStyle = '#1e2530';
+  ctx.lineWidth = 1;
+  [0, 0.25, 0.5, 0.75, 1].forEach(p => {
+    const y = pad.t + cH * p;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + cW, y); ctx.stroke();
+  });
+
+  // Zero line
+  const zeroY = yScale(0);
+  ctx.strokeStyle = '#3a4655';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(pad.l, zeroY); ctx.lineTo(pad.l + cW, zeroY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Area gradient
+  const lastVal = points[points.length - 1];
+  const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + cH);
+  if (lastVal >= 0) {
+    grad.addColorStop(0, 'rgba(0,217,126,0.25)');
+    grad.addColorStop(1, 'rgba(0,217,126,0.01)');
+  } else {
+    grad.addColorStop(0, 'rgba(255,77,106,0.01)');
+    grad.addColorStop(1, 'rgba(255,77,106,0.25)');
+  }
+
+  ctx.beginPath();
+  ctx.moveTo(pad.l, yScale(points[0]));
+  points.forEach((v, i) => { ctx.lineTo(pad.l + i * xStep, yScale(v)); });
+  ctx.lineTo(pad.l + (points.length - 1) * xStep, pad.t + cH);
+  ctx.lineTo(pad.l, pad.t + cH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.moveTo(pad.l, yScale(points[0]));
+  points.forEach((v, i) => { ctx.lineTo(pad.l + i * xStep, yScale(v)); });
+  ctx.strokeStyle = lastVal >= 0 ? '#00d97e' : '#ff4d6a';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Dots on closed trades
+  closedTrades.reverse().forEach((t, i) => {
+    const cum2 = points[i + 1];
+    const x = pad.l + (i + 1) * xStep;
+    const y = yScale(cum2);
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = t.profit >= 0 ? '#00d97e' : '#ff4d6a';
+    ctx.fill();
+  });
+
+  // Labels
+  ctx.fillStyle = '#3a4655';
+  ctx.font = '10px JetBrains Mono';
+  ctx.textAlign = 'right';
+  ctx.fillText(max.toFixed(1), pad.l - 2, pad.t + 4);
+  ctx.fillText(min.toFixed(1), pad.l - 2, pad.t + cH);
+  ctx.textAlign = 'center';
+  ctx.fillText('0', pad.l - 2, zeroY + 4);
+
+  // Last value label
+  const lastX = pad.l + (points.length - 1) * xStep;
+  const lastY = yScale(lastVal);
+  ctx.fillStyle = lastVal >= 0 ? '#00d97e' : '#ff4d6a';
+  ctx.font = 'bold 11px JetBrains Mono';
+  ctx.textAlign = 'right';
+  ctx.fillText((lastVal >= 0 ? '+' : '') + lastVal.toFixed(2), lastX, lastY - 6);
+}
+
+// --- Live price simulation ---
+const openPrice = 66514;
+let currentPrice = openPrice;
+let lastTickerPrice = currentPrice;
+
+function simPrice() {
+  currentPrice += (Math.random() - 0.5) * 25;
+
+  const priceEl  = document.getElementById('tPrice');
+  const pnlEl    = document.getElementById('tPnl');
+  const pnlPctEl = document.getElementById('tPnlPct');
+  const changeEl = document.getElementById('tChange');
+  const fairEl   = document.getElementById('tFair');
+  const posEl    = document.getElementById('posUnreal');
+  const posCur   = document.getElementById('posCurrent');
+  const balUnr   = document.getElementById('balUnreal');
+  const balEq    = document.getElementById('balEquity');
+  const tEq      = document.getElementById('tEquity');
+  const tAv      = document.getElementById('tAvail');
+  const funIdx   = document.getElementById('fundingIndex');
+  const marginFill = document.getElementById('marginFill');
+
+  const up = currentPrice > lastTickerPrice;
+  priceEl.className = 'ticker-value ' + (up ? 'flash-g' : 'flash-r');
+  priceEl.textContent = '$' + currentPrice.toLocaleString('ru-RU', {minimumFractionDigits:1, maximumFractionDigits:1});
+  fairEl.textContent = '$' + (currentPrice - 1.5).toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
+
+  const change = ((currentPrice - 67530) / 67530 * 100);
+  changeEl.className = 'ticker-change ' + (change >= 0 ? 'up' : 'down');
+  changeEl.textContent = (change >= 0 ? '+' : '') + change.toFixed(2) + '%';
+
+  // P&L
+  const pnl = (currentPrice - openPrice) * 50 / openPrice;
+  const margin = (50 * openPrice) / 20;
+  const pct = (pnl / margin * 100);
+  pnlEl.className    = 'ticker-value ' + (pnl >= 0 ? 'up' : 'down');
+  pnlEl.textContent  = (pnl >= 0 ? '+' : '') + pnl.toFixed(4);
+  pnlPctEl.className = pnl >= 0 ? 'up' : 'down';
+  pnlPctEl.textContent = (pnl >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+
+  posEl.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + ' USDT';
+  posEl.className = 'v ' + (pnl >= 0 ? 'up' : 'down');
+  posCur.textContent = currentPrice.toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
+
+  const equity = 12.46 + pnl + (pnl * 0.1);
+  balUnr.textContent = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+  balUnr.className   = pnl >= 0 ? 'up' : 'down';
+  balEq.textContent  = (12.46 + pnl).toFixed(2);
+  tEq.textContent    = (12.46 + pnl).toFixed(2);
+  tAv.textContent    = '12.46';
+  funIdx.textContent = '$' + (currentPrice + 30).toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:0});
+
+  // Margin bar: 63253 → liquidation, range to current
+  const liq = 63253.5;
+  const full = currentPrice - liq;
+  const dist = currentPrice - liq;
+  const pct2 = Math.min(100, Math.max(0, (dist / (currentPrice * 0.1)) * 100));
+  marginFill.style.width = pct2 + '%';
+
+  lastTickerPrice = currentPrice;
+  setTimeout(simPrice, 900 + Math.random() * 400);
+}
+
+// --- Funding countdown ---
+function updateFundingCountdown() {
+  const now = new Date();
+  const nextFunding = new Date(now);
+  nextFunding.setHours(Math.ceil(now.getHours() / 8) * 8, 0, 0, 0);
+  if (nextFunding <= now) nextFunding.setHours(nextFunding.getHours() + 8);
+  const diff = Math.max(0, nextFunding - now);
+  const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
+  const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
+  const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
+  const cd = `${h}:${m}:${s}`;
+  document.getElementById('fundingCountdown').textContent = cd;
+  document.getElementById('tFundingCd').textContent = cd;
+}
+
+// Init
+renderTrades();
+drawChart();
+simPrice();
+setInterval(updateFundingCountdown, 1000);
+updateFundingCountdown();
+window.addEventListener('resize', drawChart);
+</script>
+</body>
+</html>
