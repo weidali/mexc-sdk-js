@@ -147,6 +147,22 @@ mexc-sdk-js/
 | Заголовок с ключом | `X-MEXC-APIKEY` | `ApiKey` |
 | Формат символа | `BTCUSDT` | `BTC_USDT` |
 
+## Разработка
+
+### Разработка — в ветке develop
+```bash
+git checkout develop
+# ... пишем код ...
+git add .
+git commit -m "feat: новая фича"
+git push
+
+# Когда готово — мержим в main через PR или локально
+git checkout main
+git merge develop
+git push          # ← триггерит GitHub Actions → обновляет страницу
+```
+
 ## Лицензия
 
 MIT
