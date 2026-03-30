@@ -173,6 +173,15 @@ git merge develop
 git push          # ← триггерит GitHub Actions → обновляет страницу
 ```
 
+### Локальный запуск
+```bash
+# Только дашборд
+npm run serve
+
+# Дашборд + WebSocket одновременно
+npm run dev
+```
+
 ## Лицензия
 
 MIT

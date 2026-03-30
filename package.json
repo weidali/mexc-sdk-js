@@ -9,7 +9,9 @@
     "start": "node --env-file=.env examples/demo.js",
     "order": "node --env-file=.env examples/get_order.js",
     "futures": "node --env-file=.env examples/futures.js",
-    "ws": "node --env-file=.env examples/ws.js"
+    "ws": "node --env-file=.env examples/ws.js",
+    "serve": "node scripts/serve.js",
+    "dev": "node scripts/serve.js & node --env-file=.env examples/ws.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
