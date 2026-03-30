@@ -1,0 +1,13 @@
+{
+  "name": "mexc-sdk",
+  "version": "1.0.0",
+  "description": "Минималистичный SDK для работы с MEXC API v3",
+  "license": "ISC",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node --env-file=.env examples/demo.js",
+    "order": "node --env-file=.env examples/get_order.js",
+    "futures": "node --env-file=.env examples/futures.js"
+  }
+}
