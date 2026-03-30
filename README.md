@@ -1,59 +1,91 @@
-# MEXC API SDK (Node.js)
+# mexc-sdk-js
 
-Минималистичный SDK для работы с MEXC API v3 (спот).  
-Не требует сторонних зависимостей — только встроенный `fetch` (Node 18+).
+Минималистичный Node.js SDK для [MEXC API](https://www.mexc.com/mexc-api) — спот и фьючерсы.  
+Без зависимостей. Только встроенный `fetch` (Node.js 18+).
 
-## Быстрый старт
+## Установка
 
 ```bash
-# 1. Публичные данные (ключи не нужны)
-node examples/demo.js
-
-# 2. Приватные методы — укажите ключи
-MEXC_API_KEY=xxx MEXC_API_SECRET=yyy node examples/get_order.js
-
-# 3. Детали конкретного ордера
-MEXC_API_KEY=xxx MEXC_API_SECRET=yyy ORDER_ID=12345 node examples/get_order.js
+git clone https://github.com/weidali/mexc-sdk-js.git
+cd mexc-sdk-js
 ```
 
-## Использование в своём коде
+Зависимостей нет — `npm install` не нужен.
+
+## Настройка
+
+```bash
+cp .env.example .env
+# Откройте .env и вставьте ваши ключи
+```
+
+Ключи создаются на MEXC: **Профиль → API управление → Создать ключ**.  
+Для чтения данных достаточно права `Read`.
+
+## Запуск
+
+```bash
+# Спот — баланс, ордера
+npm run order
+
+# Фьючерсы — позиции, история, P&L
+npm run futures
+
+# Детали конкретного ордера
+ORDER_ID=793688897413532160 npm run futures
+
+# Другая пара
+SYMBOL=ETH_USDT npm run futures
+```
+
+## Использование в коде
+
+### Спот
 
 ```js
 import { Spot } from './src/index.js';
 
 const client = new Spot('API_KEY', 'API_SECRET');
 
-// Публичные методы (без ключей)
-const price = await client.tickerPrice('BTCUSDT');
-const book  = await client.depth('BTCUSDT', 5);
-const stats = await client.ticker24h('ETHUSDT');
+// Публичные (без ключей)
+const price   = await client.tickerPrice('BTCUSDT');
+const book    = await client.depth('BTCUSDT', 5);
+const stats   = await client.ticker24h('ETHUSDT');
 
-// Приватные методы (нужны ключи)
+// Приватные
 const account = await client.accountInfo();
 const order   = await client.getOrder('BTCUSDT', { orderId: '123456' });
 const open    = await client.openOrders('BTCUSDT');
 const history = await client.allOrders('BTCUSDT', { limit: 10 });
 
-// Создать ордер
-const newOrder = await client.newOrder('BTCUSDT', 'BUY', 'LIMIT', {
+// Создать / отменить ордер
+await client.newOrder('BTCUSDT', 'BUY', 'LIMIT', {
   quantity: '0.001',
   price: '50000',
   timeInForce: 'GTC',
 });
-
-// Отменить ордер
 await client.cancelOrder('BTCUSDT', { orderId: '123456' });
 ```
 
-## Получение API ключей
+### Фьючерсы
 
-1. Зайдите на [mexc.com](https://mexc.com) → **Профиль → API**
-2. Нажмите **Создать API ключ**
-3. Установите разрешения: `Read` (для просмотра), `Trade` (для торговли)
-4. Настройте IP-ограничения для безопасности
-5. Скопируйте `API Key` и `Secret Key`
+```js
+import { Futures } from './src/index.js';
 
-## Доступные методы
+const client = new Futures('API_KEY', 'API_SECRET');
+
+// Публичные (без ключей)
+const ticker  = await client.ticker('BTC_USDT');
+const fr      = await client.fundingRate('BTC_USDT');
+
+// Приватные
+const assets    = await client.accountAssets();
+const positions = await client.openPositions('BTC_USDT');
+const order     = await client.getOrder('793688897413532160');
+const history   = await client.orderHistory('BTC_USDT', { pageSize: 20 });
+```
+
+## API — Спот
 
 | Метод | Описание | Авторизация |
 |---|---|---|
@@ -68,3 +100,53 @@ await client.cancelOrder('BTCUSDT', { orderId: '123456' });
 | `newOrder(symbol, side, type, opts)` | Создать ордер | ✅ |
 | `cancelOrder(symbol, {orderId})` | Отменить ордер | ✅ |
 | `myTrades(symbol, opts)` | История сделок | ✅ |
+
+## API — Фьючерсы
+
+| Метод | Описание | Авторизация |
+|---|---|---|
+| `ticker(symbol)` | Тикер (цена, объём, 7d/30d) | ❌ |
+| `fairPrice(symbol)` | Fair price | ❌ |
+| `fundingRate(symbol)` | Текущий funding rate | ❌ |
+| `fundingRateHistory(symbol)` | История funding rate | ❌ |
+| `depth(symbol, limit)` | Стакан ордеров | ❌ |
+| `accountAssets()` | Баланс аккаунта | ✅ |
+| `accountAsset(currency)` | Баланс по валюте | ✅ |
+| `openPositions(symbol)` | Открытые позиции | ✅ |
+| `positionHistory(opts)` | История позиций | ✅ |
+| `openOrders(symbol)` | Открытые ордера | ✅ |
+| `orderHistory(symbol, opts)` | История ордеров | ✅ |
+| `getOrder(orderId)` | Детали ордера по ID | ✅ |
+| `getOrderByExternalId(symbol, oid)` | Детали по внешнему ID | ✅ |
+| `orderDeals(orderId)` | Трейды по ордеру | ✅ |
+| `getLeverage(symbol)` | Текущий леверидж | ✅ |
+| `feeRate(symbol)` | Ставка комиссии | ✅ |
+
+## Структура
+
+```
+mexc-sdk-js/
+├── src/
+│   ├── spot.js       # Спот клиент (подпись HMAC SHA256)
+│   ├── futures.js    # Фьючерсный клиент (другой метод подписи)
+│   └── index.js      # Экспорт
+├── examples/
+│   ├── demo.js       # Публичные данные спота
+│   ├── get_order.js  # Спот: баланс, ордера
+│   └── futures.js    # Фьючерсы: позиции, история, P&L
+├── .env.example
+└── README.md
+```
+
+## Различия Спот vs Фьючерсы
+
+| | Спот | Фьючерсы |
+|---|---|---|
+| Base URL | `api.mexc.com` | `contract.mexc.com` |
+| Подпись | `HMAC(params)` | `HMAC(apiKey + timestamp + params)` |
+| Заголовок с ключом | `X-MEXC-APIKEY` | `ApiKey` |
+| Формат символа | `BTCUSDT` | `BTC_USDT` |
+
+## Лицензия
+
+MIT
