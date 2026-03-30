@@ -132,11 +132,11 @@ async function main() {
     console.log(`   ORDER_ID=793688897413532160 node --env-file=.env examples/futures.js\n`);
   }
 
-  console.log(`📜 История ордеров (последние 5, ${SYMBOL}):`);
   try {
-    const history = await client.orderHistory(SYMBOL, { pageSize: 5 });
-    // API возвращает массив напрямую
-    const list = Array.isArray(history) ? history : (history?.resultList || []);
+      const history = await client.orderHistory(SYMBOL, { pageSize: 5 });
+      // API возвращает массив напрямую
+      const list = Array.isArray(history) ? history : (history?.resultList || []);
+      console.log(`📜 История ордеров (Количество: ${list.length}, ${SYMBOL}):`);
     if (list.length === 0) {
       console.log('   История пуста');
     } else {
@@ -148,23 +148,33 @@ async function main() {
 }
 
 function printOrder(o, detailed = false) {
-  const SIDE  = { 1: '🔼 BUY LONG', 2: '🔽 SELL SHORT', 3: '🔼 BUY (close short)', 4: '🔽 SELL (close long)' };
-  const STATE = { 1: '⬜ ОЖИДАНИЕ', 2: '🟡 АКТИВЕН', 3: '🟢 ИСПОЛНЕН', 4: '🔴 ОТМЕНЁН', 5: '🔴 ОТМЕНЁН (частично)' };
+  const G = '\x1b[32m', R = '\x1b[31m', RESET = '\x1b[0m', BOLD = '\x1b[1m';
+
+  // Сторона: LONG/открытие = зелёный, SHORT/закрытие лонга = красный
+  const SIDE = {
+    1: `${G}BUY LONG${RESET}`,
+    2: `${R}SELL SHORT${RESET}`,
+    3: `${G}BUY (close short)${RESET}`,
+    4: `${R}SELL (close long)${RESET}`,
+  };
+  const STATE = { 1: 'ОЖИДАНИЕ', 2: 'АКТИВЕН', 3: 'ИСПОЛНЕН', 4: 'ОТМЕНЁН', 5: 'ОТМЕНЁН (частично)' };
   const TYPE  = { 1: 'LIMIT', 2: 'POST_ONLY', 3: 'MARKET', 4: 'STOP_LIMIT', 5: 'MARKET (стоп)' };
 
-  const pnl = o.profit !== undefined && o.profit !== 0
-    ? `  |  P&L: ${o.profit > 0 ? '+' : ''}${o.profit} USDT`
-    : '';
-  const pnlRate = o.pnlRate !== undefined
-    ? `  (${(o.pnlRate * 100).toFixed(2)}%)`
-    : '';
+  // P&L
+  let pnlStr = '';
+  if (o.profit !== undefined && o.profit !== 0) {
+    const color = o.profit > 0 ? G : R;
+    const sign  = o.profit > 0 ? '+' : '';
+    const rate  = o.pnlRate !== undefined ? `  (${(o.pnlRate * 100).toFixed(2)}%)` : '';
+    pnlStr = `  |  P&L: ${color}${BOLD}${sign}${o.profit} USDT${rate}${RESET}`;
+  }
 
   console.log(`   ─────────────────────────────`);
   console.log(`   ID:      ${o.orderId}`);
   console.log(`   Пара:    ${o.symbol}  |  Плечо: x${o.leverage}`);
   console.log(`   Сторона: ${SIDE[o.side] || o.side}  |  Тип: ${TYPE[o.orderType] || o.orderType}`);
   console.log(`   Статус:  ${STATE[o.state] || o.state}`);
-  console.log(`   Цена:    ${o.dealAvgPrice || o.price}  |  Кол-во: ${o.vol} (исп: ${o.dealVol})${pnl}${pnlRate}`);
+  console.log(`   Цена:    ${o.dealAvgPrice || o.price}  |  Кол-во: ${o.vol} (исп: ${o.dealVol})${pnlStr}`);
   console.log(`   Комиссия: ${o.totalFee} ${o.feeCurrency}`);
   if (detailed) {
     if (o.openAvgPrice) console.log(`   Цена открытия позиции: $${o.openAvgPrice}`);

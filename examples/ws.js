@@ -10,74 +10,100 @@
  * Ctrl+C для остановки
  */
 
-import { FuturesWS } from '../src/index.js';
+import { FuturesWS, Futures } from '../src/index.js';
 
 const API_KEY    = process.env.MEXC_API_KEY    || '';
 const API_SECRET = process.env.MEXC_API_SECRET || '';
 const SYMBOL     = process.env.SYMBOL || 'BTC_USDT';
 
-// Состояние позиции (обновляется из WS)
+// Состояние позиции (обновляется из REST при старте + из WS)
 let position = null;
 
-// --- Утилиты отображения ---
-function clearLine() {
-  process.stdout.write('\r\x1b[K');
+// Строка без ANSI-кодов для подсчёта видимой длины
+function stripAnsi(str) {
+  return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-function formatPnl(value) {
-  if (value === undefined || value === null) return 'n/a';
-  const sign = value >= 0 ? '+' : '';
-  const color = value >= 0 ? '\x1b[32m' : '\x1b[31m'; // зелёный / красный
-  return `${color}${sign}${value.toFixed(4)} USDT\x1b[0m`;
+function printLine(line) {
+  const cols = (process.stdout.columns || 120) - 1;
+  const visible = stripAnsi(line);
+  if (visible.length <= cols) {
+    process.stdout.write('\r\x1b[K' + line);
+    return;
+  }
+  // Обрезаем по видимой длине, сохраняя ANSI-коды
+  let count = 0;
+  let result = '';
+  let i = 0;
+  while (i < line.length && count < cols - 1) {
+    if (line[i] === '\x1b') {
+      const end = line.indexOf('m', i);
+      if (end === -1) break;
+      result += line.slice(i, end + 1);
+      i = end + 1;
+    } else {
+      result += line[i++];
+      count++;
+    }
+  }
+  process.stdout.write('\r\x1b[K' + result + '\x1b[0m');
 }
 
-function calcUnrealizedPnl(position, currentPrice) {
-  if (!position) return null;
-  const { holdVol, openAvgPrice, positionType, leverage } = position;
-  // positionType: 1 = LONG, 2 = SHORT
+function formatPnl(pnl, margin) {
+  if (pnl === null || pnl === undefined) return '';
+  const sign = pnl >= 0 ? '+' : '';
+  const color = pnl >= 0 ? '\x1b[32m' : '\x1b[31m';
+  const pct = margin ? (pnl / margin * 100).toFixed(2) : '0.00';
+  return `${color}${sign}${pnl.toFixed(4)} USDT (${pct}%)\x1b[0m`;
+}
+
+function calcPnl(pos, currentPrice) {
+  if (!pos || !currentPrice) return null;
+  const { holdVol, openAvgPrice, positionType } = pos;
   const direction = positionType === 1 ? 1 : -1;
-  // Размер контракта BTC_USDT = 1 контракт = 1 USD / цена
-  // Упрощённо: pnl = vol * (currentPrice - openPrice) / currentPrice * direction (для inverse)
-  // Для USDT-linear: pnl = vol * (currentPrice - openPrice) * direction / openPrice * margin
-  const margin = (holdVol * openAvgPrice) / leverage;
-  const pnl = direction * (currentPrice - openAvgPrice) * holdVol / openAvgPrice * (openAvgPrice / openAvgPrice);
-  // Для USDT linear perpetual: pnl = direction * (currentPrice - openAvgPrice) * contractSize * vol
-  // На MEXC контракт = 1 USD, vol в контрактах
-  const pnlUsdt = direction * (currentPrice - openAvgPrice) * holdVol / openAvgPrice;
-  return pnlUsdt;
+  // USDT-linear: pnl = direction * (currentPrice - openPrice) * vol / openPrice
+  return direction * (currentPrice - openAvgPrice) * holdVol / openAvgPrice;
 }
 
 function printTicker(data) {
   const price = data.lastPrice;
-  const fairPrice = data.fairPrice;
-  const change = (data.riseFallRate * 100).toFixed(2);
   const changeColor = data.riseFallRate >= 0 ? '\x1b[32m' : '\x1b[31m';
-  const changeStr = `${changeColor}${change >= 0 ? '+' : ''}${change}%\x1b[0m`;
+  const changeStr = `${changeColor}${(data.riseFallRate * 100).toFixed(2)}%\x1b[0m`;
 
-  let line = `📈 ${SYMBOL}  Last: \x1b[1m$${price.toLocaleString()}\x1b[0m  Fair: $${fairPrice.toLocaleString()}  24h: ${changeStr}`;
+  let line = `📈 ${SYMBOL}  Last: \x1b[1m$${price.toLocaleString()}\x1b[0m  Fair: $${data.fairPrice.toLocaleString()}  24h: ${changeStr}`;
 
-  // P&L позиции если есть
   if (position) {
-    const pnl = calcUnrealizedPnl(position, price);
+    const pnl = calcPnl(position, price);
+    const margin = (position.holdVol * position.openAvgPrice) / position.leverage;
     const side = position.positionType === 1 ? '🔼 LONG' : '🔽 SHORT';
-    const pnlStr = formatPnl(pnl);
-    const pnlPct = position.openAvgPrice
-      ? ((pnl / ((position.holdVol * position.openAvgPrice) / position.leverage)) * 100).toFixed(2)
-      : '0.00';
-    line += `  │  ${side} x${position.leverage}  P&L: ${pnlStr} (${pnlPct}%)`;
+    line += `  │  ${side} x${position.leverage} @ $${position.openAvgPrice}  P&L: ${formatPnl(pnl, margin)}`;
   }
 
-  clearLine();
-  process.stdout.write(line);
+  printLine(line);
 }
 
 async function main() {
   console.log(`=== MEXC Futures WebSocket ===`);
   console.log(`Символ: ${SYMBOL}  |  Ctrl+C для остановки\n`);
 
+  // --- Загружаем текущую позицию через REST ---
+  if (API_KEY && API_SECRET) {
+    try {
+      const rest = new Futures(API_KEY, API_SECRET);
+      const positions = await rest.openPositions(SYMBOL);
+      if (positions && positions.length > 0) {
+        position = positions[0];
+        console.log(`📋 Позиция загружена: ${position.positionType === 1 ? 'LONG' : 'SHORT'} x${position.leverage} @ $${position.openAvgPrice}  (${position.holdVol} контр.)\n`);
+      } else {
+        console.log(`📋 Открытых позиций по ${SYMBOL} нет\n`);
+      }
+    } catch (e) {
+      console.error('⚠️  Не удалось загрузить позицию:', e.message, '\n');
+    }
+  }
+
   const ws = new FuturesWS(API_KEY, API_SECRET);
 
-  // Graceful shutdown
   process.on('SIGINT', () => {
     console.log('\n\n👋 Завершение...');
     ws.disconnect();
@@ -86,66 +112,59 @@ async function main() {
 
   await ws.connect();
 
-  // --- 1. Публичный канал: цена ---
+  // --- Публичный канал: цена ---
   ws.subscribeTicker(SYMBOL, (data) => {
     printTicker(data);
   });
 
-  // --- 2. Приватные каналы (если есть ключи) ---
+  // --- Приватные каналы ---
   if (API_KEY && API_SECRET) {
     try {
       await ws.login();
 
       ws.subscribePersonal({
-        // Обновления позиции — пересчитываем P&L
         onPosition: (data) => {
           const pos = Array.isArray(data) ? data[0] : data;
-          if (pos?.symbol === SYMBOL) {
-            if (pos.positionType && pos.holdVol > 0) {
-              position = pos;
-            } else {
-              // Позиция закрыта
-              position = null;
-              console.log('\n⚠️  Позиция закрыта');
-            }
+          if (!pos || pos.symbol !== SYMBOL) return;
+          if (pos.holdVol > 0) {
+            position = pos;
+          } else {
+            position = null;
+            console.log('\n⚠️  Позиция закрыта');
           }
         },
 
-        // Исполненные ордера
         onDeal: (data) => {
           const d = Array.isArray(data) ? data[0] : data;
           if (!d || d.symbol !== SYMBOL) return;
           const side = { 1: '🔼 BUY LONG', 2: '🔽 SELL SHORT', 3: '🔼 BUY (close)', 4: '🔽 SELL (close)' };
-          console.log(`\n✅ Сделка: ${side[d.side] || d.side}  Цена: ${d.price}  Кол-во: ${d.vol}  P&L: ${d.profit ?? 0} USDT`);
+          const pnl = d.profit ?? 0;
+          const pnlColor = pnl >= 0 ? '\x1b[32m' : '\x1b[31m';
+          console.log(`\n✅ Сделка: ${side[d.side] || d.side}  Цена: $${d.price}  Кол-во: ${d.vol}  P&L: ${pnlColor}${pnl >= 0 ? '+' : ''}${pnl}\x1b[0m USDT`);
         },
 
-        // Изменения ордеров
         onOrder: (data) => {
           const o = Array.isArray(data) ? data[0] : data;
           if (!o || o.symbol !== SYMBOL) return;
           const state = { 1: 'ОЖИДАНИЕ', 2: 'АКТИВЕН', 3: 'ИСПОЛНЕН', 4: 'ОТМЕНЁН' };
           if (o.state === 3 || o.state === 4) {
-            console.log(`\n📋 Ордер #${o.orderId}: ${state[o.state] || o.state}  Цена: ${o.dealAvgPrice || o.price}`);
+            console.log(`\n📋 Ордер #${o.orderId}: ${state[o.state]}  Цена: ${o.dealAvgPrice || o.price}`);
           }
         },
 
-        // Баланс
         onAsset: (data) => {
           const asset = Array.isArray(data)
             ? data.find(a => a.currency === 'USDT')
             : (data.currency === 'USDT' ? data : null);
           if (asset) {
-            console.log(`\n💼 Баланс USDT: доступно=${asset.availableBalance}  equity=${asset.equity}  unrealized=${asset.unrealized}`);
+            console.log(`\n💼 USDT: доступно=${asset.availableBalance}  equity=${asset.equity}  unrealized=${asset.unrealized}`);
           }
         },
       }, [SYMBOL]);
 
     } catch (e) {
-      console.error('⚠️  Приватные каналы недоступны:', e.message);
-      console.log('   Работаем только с публичными данными\n');
+      console.error('⚠️  Приватные каналы недоступны:', e.message, '\n');
     }
-  } else {
-    console.log('ℹ️  Без ключей — только публичная цена\n');
   }
 }
 
