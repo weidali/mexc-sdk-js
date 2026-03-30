@@ -1,6 +1,6 @@
 {
   "name": "mexc-sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Минималистичный SDK для работы с MEXC API v3",
   "license": "MIT",
   "type": "module",
