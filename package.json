@@ -10,7 +10,7 @@
     "order": "node --env-file=.env examples/get_order.js",
     "futures": "node --env-file=.env examples/futures.js",
     "ws": "node --env-file=.env examples/ws.js",
-    "serve": "node scripts/serve.js",
+    "serve": "node --env-file=.env scripts/serve.js",
     "dev": "node scripts/serve.js & node --env-file=.env examples/ws.js"
   },
   "dependencies": {

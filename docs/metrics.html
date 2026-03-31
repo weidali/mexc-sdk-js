@@ -517,7 +517,7 @@
       <div class="card-header">
         <div class="card-title">📈 P&L по сделкам</div>
         <div style="display:flex;gap:6px">
-          <span class="badge badge-green">Cumulative +7.76 USDT</span>
+          <span class="badge badge-green" id="statTotalPnl">累计 +7.76 USDT</span>
           <span class="badge badge-gray">последние 20</span>
         </div>
       </div>
@@ -530,7 +530,7 @@
     <div class="card">
       <div class="card-header">
         <div class="card-title">🎯 Win Rate</div>
-        <span class="badge badge-yellow">20 сделок</span>
+        <span class="badge badge-yellow" id="statTradeCount">20 сделок</span>
       </div>
       <div class="card-body">
         <div class="ring-wrap">
@@ -580,13 +580,13 @@
         <span class="pos-side pos-long">LONG</span>
       </div>
       <div class="card-body">
-        <div class="pos-row"><span class="k">Символ</span><span class="v">BTC_USDT</span></div>
-        <div class="pos-row"><span class="k">Плечо</span><span class="v" style="color:var(--yellow)">x20</span></div>
-        <div class="pos-row"><span class="k">Объём</span><span class="v">50 контр.</span></div>
-        <div class="pos-row"><span class="k">Цена входа</span><span class="v">$66 514</span></div>
-        <div class="pos-row"><span class="k">Ликв. цена</span><span class="v" style="color:var(--red)">$63 253.5</span></div>
-        <div class="pos-row"><span class="k">Маржа (im)</span><span class="v">16.76 USDT</span></div>
-        <div class="pos-row"><span class="k">Margin ratio</span><span class="v" style="color:var(--yellow)">2.52%</span></div>
+        <div class="pos-row"><span class="k">Символ</span><span class="v" id="posSymbol">BTC_USDT</span></div>
+        <div class="pos-row"><span class="k">Плечо</span><span class="v" id="posLeverage" style="color:var(--yellow)">x20</span></div>
+        <div class="pos-row"><span class="k">Объём</span><span class="v" id="posVol">50 контр.</span></div>
+        <div class="pos-row"><span class="k">Цена входа</span><span class="v" id="posEntry">$66 514</span></div>
+        <div class="pos-row"><span class="k">Ликв. цена</span><span class="v" id="posLiq" style="color:var(--red)">$63 253.5</span></div>
+        <div class="pos-row"><span class="k">Маржа (im)</span><span class="v" id="posMargin">16.76 USDT</span></div>
+        <div class="pos-row"><span class="k">Margin ratio</span><span class="v" id="posMarginRatio" style="color:var(--yellow)">2.52%</span></div>
         <div class="pos-row"><span class="k">Unrealized P&L</span><span class="v up" id="posUnreal">+1.74 USDT</span></div>
         <div class="margin-bar-wrap">
           <div class="margin-bar-label">
@@ -784,13 +784,13 @@ async function loadPositions() {
     document.querySelector('.pos-side').textContent = isLong ? 'LONG' : 'SHORT';
     document.querySelector('.pos-side').className = 'pos-side ' + (isLong ? 'pos-long' : 'pos-short');
 
-    document.querySelectorAll('.pos-row .v')[0].textContent = p.symbol;
-    document.querySelectorAll('.pos-row .v')[1].textContent = 'x' + p.leverage;
-    document.querySelectorAll('.pos-row .v')[2].textContent = p.holdVol + ' контр.';
-    document.querySelectorAll('.pos-row .v')[3].textContent = '$' + fmt(p.openAvgPrice, 1);
-    document.querySelectorAll('.pos-row .v')[4].textContent = '$' + fmt(p.liquidatePrice, 1);
-    document.querySelectorAll('.pos-row .v')[5].textContent = fmt(p.im, 4) + ' USDT';
-    document.querySelectorAll('.pos-row .v')[6].textContent = fmt(p.marginRatio * 100) + '%';
+    document.getElementById('posSymbol').textContent      = p.symbol;
+    document.getElementById('posLeverage').textContent    = 'x' + p.leverage;
+    document.getElementById('posVol').textContent         = p.holdVol + ' контр.';
+    document.getElementById('posEntry').textContent       = '$' + fmt(p.openAvgPrice, 1);
+    document.getElementById('posLiq').textContent         = '$' + fmt(p.liquidatePrice, 1);
+    document.getElementById('posMargin').textContent      = fmt(p.im, 4) + ' USDT';
+    document.getElementById('posMarginRatio').textContent = fmt(p.marginRatio * 100) + '%';
 
     updatePnl();
   } catch(e) { console.error('positions:', e); }
@@ -940,10 +940,11 @@ function calcStats(orders) {
   // Ring
   const circle = document.getElementById('winRing');
   const circumference = 226.2;
-  circle.setAttribute('stroke-dashoffset', circumference - (circumference * winRate / 100));
-  circle.previousElementSibling.nextElementSibling?.remove();
-  const text = circle.parentNode.querySelector('text');
-  if (text) text.textContent = winRate + '%';
+  if (circle) {
+    circle.setAttribute('stroke-dashoffset', circumference - (circumference * winRate / 100));
+    const text = circle.closest('svg')?.querySelector('text');
+    if (text) text.textContent = winRate + '%';
+  }
 
   // Stats
   const rows = document.querySelectorAll('.ring-stat-row .v');
@@ -955,9 +956,9 @@ function calcStats(orders) {
   if (rows[5]) rows[5].textContent = '-' + fmt(totalFee, 4) + ' USDT';
 
   // Badge total pnl
-  const badge = document.querySelector('.card-header .badge-green');
-  if (badge) badge.textContent = sign(totalPnl) + fmt(totalPnl, 2) + ' USDT  (Cumulative)';
-  const badgeCnt = document.querySelector('.card-header .badge-yellow');
+  const badge = document.getElementById('statTotalPnl');
+  if (badge) badge.textContent = sign(totalPnl) + fmt(totalPnl, 2) + ' USDT';
+  const badgeCnt = document.getElementById('statTradeCount');
   if (badgeCnt) badgeCnt.textContent = total + ' сделок';
 }
 
