@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
-
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,11 +75,21 @@ jobs:
           body_path: /tmp/release_notes.md
           make_latest: true
 
-      - name: Deploy GitHub Pages
-        uses: actions/configure-pages@v4
-
-      - uses: actions/upload-pages-artifact@v3
+      - name: Подготовить артефакт для Pages
+        uses: actions/upload-pages-artifact@v3
         with:
           path: docs/
 
-      - uses: actions/deploy-pages@v4
+  deploy:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        uses: actions/deploy-pages@v4
+        id: deployment
