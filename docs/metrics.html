@@ -728,6 +728,8 @@
   </div>
 
 </div>
+<div id="app-footer"></div>
+<script type="module" src="layout.js"></script>
 
 <script>
 const API = (path) => fetch(path).then(r => r.json()).then(d => d.ok ? d.data : Promise.reject(d.error));
