@@ -437,82 +437,251 @@ function detectTrend(candles, ema20, ema50, ema200) {
 //   ПОИСК СИГНАЛОВ
 // ═══════════════════════════════════════════
 
-function findSignals1H(candles, ema20, ema50, rsi, bb, vwap) {
-  const signals = [];
-  const twoGreenIdx = [];
+// ─── Вспомогательные утилиты ───────────────────────────────────────────────
 
-  for (let i = 1; i < candles.length; i++) {
-    const c  = candles[i];
-    const cp = candles[i - 1];
-
-    // Две зелёные свечи подряд
-    if (c.close > c.open && cp.close > cp.open) {
-      twoGreenIdx.push(i);
-      // Только если в контексте тренда (цена выше EMA50)
-      if (ema50[i] && c.close > ema50[i]) {
-        const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        signals.push({
-          type: 'TWO_GREEN_1H',
-          text: `1H: Две зелёные свечи выше EMA50 (${fmt(c.close, 1)})`,
-          time, strength: 'medium', icon: '🟢', idx: i,
-        });
-      }
-    }
-
-    // BB сжатие → пробой вверх
-    if (bb.upper[i] && bb.lower[i]) {
-      const width = (bb.upper[i] - bb.lower[i]) / bb.middle[i];
-      if (width < 0.02 && c.close > c.open) {
-        const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-        signals.push({ type: 'BB_SQUEEZE', text: `1H: BB сжатие + бычья свеча`, time, strength: 'strong', icon: '💥', idx: i });
-      }
-    }
-  }
-
-  return { signals, twoGreenIdx };
+// Средний объём за N свечей
+function avgVol(candles, i, n = 20) {
+  const slice = candles.slice(Math.max(0, i - n), i);
+  return slice.reduce((s, c) => s + c.volume, 0) / (slice.length || 1);
 }
 
-function findSignals15M(candles, ema9, ema21, rsi) {
-  const signals = [];
-  const entrySignals = []; // индексы для отрисовки на графике
+// ATR за N периодов (средний истинный диапазон)
+function calcATR(candles, period = 14) {
+  const atr = [null];
+  for (let i = 1; i < candles.length; i++) {
+    const tr = Math.max(
+      candles[i].high - candles[i].low,
+      Math.abs(candles[i].high - candles[i-1].close),
+      Math.abs(candles[i].low  - candles[i-1].close)
+    );
+    if (i < period) { atr.push(null); continue; }
+    const prev = atr[i-1] || tr;
+    atr.push((prev * (period - 1) + tr) / period);
+  }
+  return atr;
+}
 
-  for (let i = 2; i < candles.length; i++) {
+// Уровень поддержки/сопротивления — локальный минимум/максимум за N свечей
+function isSupport(candles, i, n = 5) {
+  if (i < n || i >= candles.length - 1) return false;
+  const low = candles[i].low;
+  return candles.slice(i - n, i).every(c => c.low >= low) &&
+         candles.slice(i + 1, Math.min(i + 3, candles.length)).every(c => c.low >= low);
+}
+
+// Confluence scorer: возвращает { score, reasons[] }
+function scoreConfluence(factors) {
+  const active = factors.filter(f => f.active);
+  return { score: active.length, reasons: active.map(f => f.label) };
+}
+
+// ─── 1H: Тренд + паттерны с фильтрацией ────────────────────────────────────
+
+function findSignals1H(candles, ema20, ema50, rsi, bb, vwap) {
+  const signals    = [];
+  const twoGreenIdx = [];
+  const atr        = calcATR(candles, 14);
+  let   lastSignalIdx = -10; // cooldown между сигналами
+
+  // Определяем тренд старшего ТФ (последние 24 свечи = 1 день)
+  const n    = candles.length - 1;
+  const e20  = ema20[n], e50 = ema50[n];
+  const bullTrend = e20 && e50 && e20 > e50 && candles[n].close > e50;
+  const bearTrend = e20 && e50 && e20 < e50 && candles[n].close < e50;
+
+  for (let i = 5; i < candles.length; i++) {
     const c   = candles[i];
-    const cp  = candles[i - 1];
-    const cpp = candles[i - 2];
-    const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+    const cp  = candles[i-1];
+    const cpp = candles[i-2];
 
-    // 1. EMA9 пересекает EMA21 снизу вверх
-    if (ema9[i] && ema21[i] && ema9[i-1] && ema21[i-1]) {
-      if (ema9[i-1] < ema21[i-1] && ema9[i] > ema21[i]) {
-        signals.push({ type: 'EMA_CROSS', text: `15M: EMA9 пересекла EMA21 вверх`, time, strength: 'strong', icon: '⚡', idx: i });
-        entrySignals.push({ idx: i, type: 'cross', color: '#a78bfa' });
+    // ── 1. Две зелёные свечи с confluence ─────────────────────────────────
+    if (c.close > c.open && cp.close > cp.open) {
+      twoGreenIdx.push(i);
+
+      // Фильтр 1: только в восходящем тренде
+      if (!bullTrend) continue;
+
+      // Confluence факторы
+      const { score, reasons } = scoreConfluence([
+        { active: e50  && c.close > ema50[i],                   label: 'цена выше EMA50'      },
+        { active: e20  && c.close > ema20[i],                   label: 'цена выше EMA20'      },
+        { active: vwap && c.close > vwap[i],                    label: 'цена выше VWAP'       },
+        { active: rsi[i] && rsi[i] > 50 && rsi[i] < 65,        label: 'RSI в зоне 50–65'     },
+        { active: c.volume > avgVol(candles, i) * 1.2,          label: 'объём выше среднего'  },
+        { active: bb.upper[i] && c.close < bb.upper[i] * 0.998, label: 'не у верхней BB'     },
+        { active: i - lastSignalIdx > 4,                        label: 'cooldown пройден'     },
+      ]);
+
+      // Минимум 4 из 7 факторов
+      if (score >= 4) {
+        const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        const strength = score >= 6 ? 'strong' : score >= 5 ? 'medium' : 'weak';
+        signals.push({
+          type: 'TWO_GREEN_1H',
+          text: `1H: 2 бычьи свечи [${score}/7] · ${reasons.slice(0,2).join(', ')}`,
+          time, strength, icon: '🟢', idx: i,
+        });
+        lastSignalIdx = i;
       }
     }
 
-    // 2. RSI oversold + разворот (RSI < 35 → разворот вверх)
-    if (rsi[i-1] && rsi[i] && rsi[i-1] < 35 && rsi[i] > rsi[i-1] && c.close > c.open) {
-      signals.push({ type: 'RSI_REVERSAL', text: `15M: RSI разворот с перепроданности (${rsi[i-1].toFixed(1)})`, time, strength: 'strong', icon: '🔄', idx: i });
-      entrySignals.push({ idx: i, type: 'rsi', color: '#f5c542' });
+    // ── 2. BB squeeze + пробой ─────────────────────────────────────────────
+    if (bb.upper[i] && bb.lower[i] && atr[i]) {
+      const bbWidth = (bb.upper[i] - bb.lower[i]) / bb.middle[i];
+      const prevWidth = bb.upper[i-1] && bb.lower[i-1]
+        ? (bb.upper[i-1] - bb.lower[i-1]) / bb.middle[i-1] : null;
+
+      // Squeeze: ширина BB < 1.5× ATR/цена + расширение
+      const squeezed = bbWidth < 0.025;
+      const expanding = prevWidth && bbWidth > prevWidth * 1.05;
+      const bullBreak = c.close > c.open && c.close > bb.middle[i];
+
+      if (squeezed && expanding && bullBreak && bullTrend) {
+        const { score } = scoreConfluence([
+          { active: rsi[i] && rsi[i] > 50,               label: 'RSI > 50'            },
+          { active: c.volume > avgVol(candles, i) * 1.3,  label: 'объём × 1.3'        },
+          { active: vwap && c.close > vwap[i],            label: 'выше VWAP'          },
+          { active: i - lastSignalIdx > 6,                label: 'cooldown'           },
+        ]);
+        if (score >= 2) {
+          const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+          signals.push({ type: 'BB_SQUEEZE', text: `1H: BB сжатие + бычий пробой [${score}/4]`, time, strength: score >= 3 ? 'strong' : 'medium', icon: '💥', idx: i });
+          lastSignalIdx = i;
+        }
+      }
     }
 
-    // 3. Первая зелёная свеча после двух красных + выше EMA9
-    if (c.close > c.open && cp.close < cp.open && cpp.close < cpp.open && ema9[i] && c.close > ema9[i]) {
-      signals.push({ type: 'FIRST_GREEN', text: `15M: Первая зел. свеча после красных + выше EMA9`, time, strength: 'medium', icon: '🌱', idx: i });
-      entrySignals.push({ idx: i, type: 'green', color: '#00d97e' });
-    }
-
-    // 4. Pin bar разворот (длинная тень снизу)
-    const bodySize = Math.abs(c.close - c.open);
-    const lowerWick = Math.min(c.open, c.close) - c.low;
-    if (lowerWick > bodySize * 2.5 && c.close > c.open && ema9[i] && c.low < ema9[i]) {
-      signals.push({ type: 'PIN_BAR', text: `15M: Пин-бар на EMA9 (отскок)`, time, strength: 'medium', icon: '📌', idx: i });
-      entrySignals.push({ idx: i, type: 'pin', color: '#fb923c' });
+    // ── 3. VWAP bounce (отскок от VWAP в тренде) ──────────────────────────
+    if (vwap && ema50[i] && bullTrend) {
+      const prevBelow = cp.low < vwap[i-1] && cp.close > cp.open * 0.999;
+      const currAbove = c.close > vwap[i] && c.close > c.open;
+      if (prevBelow && currAbove && rsi[i] && rsi[i] > 45 && rsi[i] < 60) {
+        if (i - lastSignalIdx > 5) {
+          const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+          signals.push({ type: 'VWAP_BOUNCE', text: `1H: Отскок от VWAP в восходящем тренде`, time, strength: 'medium', icon: '🔵', idx: i });
+          lastSignalIdx = i;
+        }
+      }
     }
   }
 
-  // Оставляем только последние 15 сигналов
-  return { signals: signals.slice(-15).reverse(), entrySignals };
+  return { signals: signals.slice(-10).reverse(), twoGreenIdx };
+}
+
+// ─── 15M: Точка входа с multi-factor confluence ─────────────────────────────
+
+function findSignals15M(candles, ema9, ema21, rsi, trend1hBull = true) {
+  const signals      = [];
+  const entrySignals = [];
+  const atr15        = calcATR(candles, 14);
+  const bb15         = calcBB(candles.map(c => c.close), 20);
+  let   lastSigIdx   = -8;
+
+  for (let i = 4; i < candles.length; i++) {
+    const c   = candles[i];
+    const cp  = candles[i-1];
+    const cpp = candles[i-2];
+    const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+
+    // ── Глобальный фильтр тренда: 15M сигналы лонга — только при бычьем 1H ──
+    if (!trend1hBull) continue;
+
+    // ── Фильтр перекупленности: не входим выше RSI 65 ──
+    if (rsi[i] && rsi[i] > 65) continue;
+
+    // ── Фильтр BB: не входим у верхней полосы ──
+    if (bb15.upper[i] && c.close > bb15.upper[i] * 0.997) continue;
+
+    // ── Базовые условия (нужны для большинства сигналов) ──
+    const aboveEma9   = ema9[i]  && c.close > ema9[i];
+    const aboveEma21  = ema21[i] && c.close > ema21[i];
+    const bullCandle  = c.close > c.open;
+    const goodVolume  = c.volume > avgVol(candles, i) * 1.1;
+    const cooldown    = i - lastSigIdx > 5;
+
+    // ── 1. EMA crossover (9 пересекает 21 снизу вверх) ───────────────────
+    if (ema9[i] && ema21[i] && ema9[i-1] && ema21[i-1]) {
+      const crossed = ema9[i-1] < ema21[i-1] && ema9[i] >= ema21[i];
+      if (crossed && bullCandle && cooldown) {
+        const { score, reasons } = scoreConfluence([
+          { active: aboveEma21,                              label: 'цена > EMA21'         },
+          { active: rsi[i] && rsi[i] > 50,                  label: 'RSI > 50'             },
+          { active: goodVolume,                              label: 'объём ↑'              },
+          { active: rsi[i] && rsi[i-3] && rsi[i] > rsi[i-3], label: 'RSI растёт'          },
+          { active: !bb15.upper[i] || c.close < bb15.upper[i] * 0.995, label: 'не у BB top' },
+        ]);
+        if (score >= 3) {
+          signals.push({ type: 'EMA_CROSS', text: `15M: EMA crossover [${score}/5] · ${reasons.slice(0,2).join(', ')}`, time, strength: score >= 4 ? 'strong' : 'medium', icon: '⚡', idx: i });
+          entrySignals.push({ idx: i, type: 'cross', color: '#a78bfa' });
+          lastSigIdx = i;
+        }
+      }
+    }
+
+    // ── 2. RSI oversold разворот (< 32) ───────────────────────────────────
+    if (rsi[i-1] && rsi[i] && rsi[i-1] < 32 && rsi[i] > rsi[i-1] && bullCandle && cooldown) {
+      // Дополнительно: свеча отскочила от EMA или поддержки
+      const nearEma = ema9[i] && Math.abs(c.low - ema9[i]) / ema9[i] < 0.003;
+      const { score, reasons } = scoreConfluence([
+        { active: nearEma,                                   label: 'отскок от EMA9'      },
+        { active: aboveEma9,                                 label: 'закрылся выше EMA9'  },
+        { active: goodVolume,                                label: 'объём ↑'             },
+        { active: rsi[i] > rsi[i-1] + 2,                   label: 'RSI разворот сильный' },
+        { active: atr15[i] && (c.close - c.open) > atr15[i] * 0.3, label: 'тело > 0.3 ATR' },
+      ]);
+      if (score >= 2) {
+        signals.push({ type: 'RSI_REVERSAL', text: `15M: RSI разворот ${rsi[i-1].toFixed(0)}→${rsi[i].toFixed(0)} [${score}/5] · ${reasons.slice(0,2).join(', ')}`, time, strength: score >= 4 ? 'strong' : 'medium', icon: '🔄', idx: i });
+        entrySignals.push({ idx: i, type: 'rsi', color: '#f5c542' });
+        lastSigIdx = i;
+      }
+    }
+
+    // ── 3. Первая зелёная после 2–3 красных (momentum shift) ─────────────
+    const red1 = cp.close < cp.open;
+    const red2 = cpp.close < cpp.open;
+    if (bullCandle && red1 && red2 && cooldown && aboveEma9) {
+      const bodyRatio = (c.close - c.open) / (c.high - c.low || 1);
+      const { score, reasons } = scoreConfluence([
+        { active: bodyRatio > 0.5,                           label: 'сильное тело'        },
+        { active: goodVolume,                                label: 'объём ↑'             },
+        { active: rsi[i] && rsi[i] > 45,                    label: 'RSI > 45'            },
+        { active: aboveEma21,                                label: 'выше EMA21'          },
+        // Паттерн: суммарный откат 2 красных < 1 ATR (неглубокий — в тренде)
+        { active: atr15[i] && (cp.open - c.close) < atr15[i] * 1.2, label: 'откат < 1 ATR' },
+      ]);
+      if (score >= 3) {
+        signals.push({ type: 'FIRST_GREEN', text: `15M: Momentum shift [${score}/5] · ${reasons.slice(0,2).join(', ')}`, time, strength: score >= 4 ? 'strong' : 'medium', icon: '🌱', idx: i });
+        entrySignals.push({ idx: i, type: 'green', color: '#00d97e' });
+        lastSigIdx = i;
+      }
+    }
+
+    // ── 4. Pin bar / hammer (отскок от уровня) ────────────────────────────
+    if (cooldown && bullCandle) {
+      const body  = c.close - c.open;
+      const lwick = c.open - c.low;
+      const uwick = c.high - c.close;
+      // Хаммер: нижняя тень ≥ 2× тела, верхняя тень < 0.5× тела
+      const isHammer = lwick >= body * 2 && uwick < body * 0.5 && body > 0;
+      if (isHammer && aboveEma9) {
+        const nearSupport = isSupport(candles, i - 1, 4);
+        const { score, reasons } = scoreConfluence([
+          { active: nearSupport,                             label: 'у уровня поддержки'  },
+          { active: goodVolume,                              label: 'объём ↑'             },
+          { active: rsi[i] && rsi[i] < 50,                  label: 'RSI < 50 (не перекуп)'},
+          { active: lwick > atr15[i] * 0.8,                 label: 'тень > 0.8 ATR'     },
+          { active: ema9[i] && c.low < ema9[i] * 1.002,    label: 'тень касает EMA9'    },
+        ]);
+        if (score >= 2) {
+          signals.push({ type: 'PIN_BAR', text: `15M: Hammer [${score}/5] · ${reasons.slice(0,2).join(', ')}`, time, strength: score >= 3 ? 'strong' : 'medium', icon: '📌', idx: i });
+          entrySignals.push({ idx: i, type: 'pin', color: '#fb923c' });
+          lastSigIdx = i;
+        }
+      }
+    }
+  }
+
+  return { signals: signals.slice(-10).reverse(), entrySignals };
 }
 
 // ═══════════════════════════════════════════
@@ -876,7 +1045,7 @@ async function loadAndRender() {
     const ema9_15m  = calcEMA(closes15m, 9);
     const ema21_15m = calcEMA(closes15m, 21);
     const rsi15m    = calcRSI(closes15m, 14);
-    const { signals: sig15m, entrySignals } = findSignals15M(c15m, ema9_15m, ema21_15m, rsi15m);
+    const { signals: sig15m, entrySignals } = findSignals15M(c15m, ema9_15m, ema21_15m, rsi15m, trend1h.score >= 2);
 
     // 15M status
     const lastSig = entrySignals[entrySignals.length - 1];
