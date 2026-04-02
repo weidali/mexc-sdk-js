@@ -81,6 +81,14 @@
   .trend-side { background:rgba(245,197,66,.1);color:var(--yellow);border:1px solid rgba(245,197,66,.25); }
 
   .signal-row { display:flex;gap:8px;margin-left:auto; }
+  .demo-overlay {
+    position:fixed; bottom:16px; right:20px; z-index:500;
+    display:flex; align-items:center; gap:8px;
+    padding:8px 14px; border-radius:8px;
+    background:rgba(245,197,66,0.1); border:1px solid rgba(245,197,66,0.3);
+    font-size:11px; font-weight:600; color:var(--yellow);
+    backdrop-filter:blur(8px);
+  }
 
   /* Chart grid */
   .charts-stack { display:flex; flex-direction:column; gap:14px; margin-bottom:14px; }
@@ -153,10 +161,17 @@
     <a href="analysis.html" class="active">Анализ</a>
   </nav>
   <div class="header-right">
+    <div id="demoBanner" style="display:none;align-items:center;gap:6px;padding:5px 12px;border-radius:6px;background:rgba(245,197,66,0.12);border:1px solid rgba(245,197,66,0.3);font-size:11px;font-weight:600;color:var(--yellow);letter-spacing:.3px">
+      🎭 DEMO MODE — публичные данные
+    </div>
     <span id="updateTime" style="font-size:10px;color:var(--text3)">обновление...</span>
     <span class="badge badge-gray"><span class="live-dot"></span>AUTO</span>
   </div>
 </header>
+
+<div id="demoOverlay" class="demo-overlay" style="display:none">
+  🎭 DEMO · Мок-данные · <a href="#" style="color:var(--yellow);opacity:.7" onclick="document.getElementById('demoOverlay').style.display='none';return false">✕</a>
+</div>
 
 <div class="container">
 
@@ -309,6 +324,55 @@
 const $ = id => document.getElementById(id);
 const fmt  = (n, d=2) => Number(n).toLocaleString('ru-RU', {minimumFractionDigits:d, maximumFractionDigits:d});
 const sign = n => n >= 0 ? '+' : '';
+
+// ── Демо-режим ──────────────────────────────────────────────────────────────
+let IS_DEMO = false;
+
+function genMockKlines(count, interval) {
+  const candles = [];
+  const intervalMs = interval === 'Min60' ? 3600000 : 900000;
+  let price = 66500;
+  let time  = Date.now() - count * intervalMs;
+  for (let i = 0; i < count; i++) {
+    const trend  = Math.sin(i / 40) * 1200 + Math.sin(i / 9) * 300;
+    const noise  = (Math.random() - 0.48) * 350;
+    const change = trend * 0.012 + noise;
+    const open   = price;
+    const close  = Math.max(open + change, open * 0.988);
+    const wick   = Math.abs(change) * (0.4 + Math.random() * 0.8);
+    const high   = Math.max(open, close) + Math.abs(wick) * Math.random();
+    const low    = Math.min(open, close) - Math.abs(wick) * Math.random();
+    const vol    = 50000 + Math.random() * 180000 + (Math.abs(change) > 250 ? 250000 : 0);
+    candles.push({ time, open, high: Math.max(open,close,high), low: Math.min(open,close,low), close, volume: vol });
+    price = close;
+    time += intervalMs;
+  }
+  return candles;
+}
+
+function getMockData(path) {
+  const p      = path.split('?')[0];
+  const params = Object.fromEntries(new URLSearchParams((path.split('?')[1] || '')));
+  const limit  = parseInt(params.limit) || 200;
+  if (p === '/api/klines')  return { ok:true, data: genMockKlines(limit, params.interval || 'Min60') };
+  if (p === '/api/ticker')  return { ok:true, data: { lastPrice:66514, fairPrice:66512, riseFallRate:-0.0113, indexPrice:66530, volume24:213000000, high24Price:68132, lower24Price:64941, fundingRate:0.000007 } };
+  if (p === '/api/funding') return { ok:true, data: { fundingRate:0.000007, nextSettleTime:Date.now()+9600000, indexPrice:66530 } };
+  if (p === '/api/positions') return { ok:true, data:[{ symbol:'BTC_USDT', positionType:1, leverage:20, holdVol:50, openAvgPrice:66514, liquidatePrice:63253.5, im:16.76, marginRatio:0.0252, realised:-0.133, profitRatio:-0.0079, createTime:Date.now()-3600000 }] };
+  if (p === '/api/assets')  return { ok:true, data:[{ currency:'USDT', availableBalance:12.46, frozenBalance:0, equity:30.95, unrealized:1.73 }] };
+  if (p === '/api/orders')  return { ok:true, data:[] };
+  if (p === '/api/status')  return { ok:true, data:{ demo:true, hasKeys:false } };
+  return { ok:false, error:'mock: unknown' };
+}
+
+const API = async (path) => {
+  if (IS_DEMO) {
+    await new Promise(r => setTimeout(r, 60));
+    const m = getMockData(path);
+    if (!m.ok) throw new Error(m.error);
+    return m.data;
+  }
+  return fetch(path).then(r => r.json()).then(d => d.ok ? d.data : Promise.reject(d.error));
+};
 
 // ═══════════════════════════════════════════
 //   ИНДИКАТОРЫ
@@ -708,7 +772,7 @@ function drawCandleChart(canvasId, candles, overlays = {}, markers = [], rsiData
   ctx.scale(dpr, dpr);
 
   const N    = candles.length;
-  const padL = 8, padR = 52, padT = 12, padB = 4;
+  const padL = 8, padR = 52, padT = 12, padB = 18; // padB увеличен для временных меток
   const cW   = W - padL - padR;
 
   const candleW  = Math.max(1, cW / N);
@@ -826,6 +890,35 @@ function drawCandleChart(canvasId, candles, overlays = {}, markers = [], rsiData
   ctx.fillStyle = '#00d97e'; ctx.fillRect(W - padR + 1, yLast - 8, padR - 2, 16);
   ctx.fillStyle = '#000'; ctx.font = 'bold 9px JetBrains Mono'; ctx.textAlign = 'center';
   ctx.fillText(fmt(lastClose, 0), W - padR + padR/2, yLast + 3);
+
+  // --- Временные метки по оси X ---
+  if (candles[0]?.time) {
+    const labelCount = Math.min(8, Math.floor(cW / 70));
+    const step = Math.max(1, Math.floor(N / labelCount));
+    ctx.fillStyle = '#3a4655'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'center';
+    for (let i = 0; i < N; i += step) {
+      const t   = new Date(candles[i].time);
+      const x   = xOf(i);
+      const y   = padT + mainH - padB + 12;
+      // Формат: если свеча 1H+ — показываем дату+час, если 15M — час:мин
+      const diffMs  = candles[N-1].time - candles[0].time;
+      const isDaily = diffMs > 1000 * 60 * 60 * 24 * 3; // > 3 дней
+      let label;
+      if (isDaily) {
+        label = t.toLocaleDateString('ru-RU', {month:'2-digit', day:'2-digit'}) + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      } else {
+        label = t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      }
+      // Вертикальная засечка
+      ctx.strokeStyle = '#1e2530'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, padT + mainH - padB); ctx.lineTo(x, padT + mainH - padB + 4); ctx.stroke();
+      ctx.fillStyle = '#3a4655';
+      ctx.fillText(label, x, y);
+    }
+    // Последняя метка — "NOW"
+    ctx.fillStyle = '#00d97e55';
+    ctx.fillText('NOW', xOf(N-1), padT + mainH - padB + 12);
+  }
 
   // --- RSI panel ---
   if (rsiData) {
@@ -953,22 +1046,22 @@ function updateSignalsLog(newSignals1h, newSignals15m) {
 
 async function loadAndRender() {
   try {
-    const [klines1h, klines15m, ticker] = await Promise.all([
-      fetch('/api/klines?symbol=BTC_USDT&interval=Min60&limit=500').then(r=>r.json()),
-      fetch('/api/klines?symbol=BTC_USDT&interval=Min15&limit=300').then(r=>r.json()),
-      fetch('/api/ticker?symbol=BTC_USDT').then(r=>r.json()),
+    const [c1h_full, c15m_full, tickerRaw] = await Promise.all([
+      API('/api/klines?symbol=BTC_USDT&interval=Min60&limit=500'),
+      API('/api/klines?symbol=BTC_USDT&interval=Min15&limit=300'),
+      IS_DEMO ? Promise.resolve(getMockData('/api/ticker').data)
+              : fetch('/api/ticker?symbol=BTC_USDT').then(r=>r.json()).then(d=>d.data),
     ]);
-
-    const c1h_full  = klines1h.data;   // 500 свечей — для расчёта индикаторов
-    const c15m_full = klines15m.data;  // 300 свечей — для расчёта индикаторов
+    const ticker = { ok: true, data: tickerRaw };
+    // c1h_full и c15m_full уже массивы (API возвращает data напрямую)
     const SHOW_1H  = 80;               // свечей на графике 1H
     const SHOW_15M = 60;               // свечей на графике 15M
     const c1h  = c1h_full.slice(-SHOW_1H);    // последние 80 для отрисовки
     const c15m = c15m_full.slice(-SHOW_15M);  // последние 60 для отрисовки
 
     // Ticker
-    if (ticker.ok) {
-      const t = ticker.data;
+    if (tickerRaw) {
+      const t = tickerRaw;
       $('symPrice').textContent  = '$' + fmt(t.lastPrice, 1);
       const ch = t.riseFallRate * 100;
       $('symChange').textContent = sign(ch) + fmt(ch) + '%';
@@ -1123,10 +1216,30 @@ function connectSSE() {
 }
 
 // ── Запуск ──
-loadAndRender();
-connectSSE();
-setInterval(loadAndRender, 30000); // перерисовка каждые 30 сек
-window.addEventListener('resize', loadAndRender);
+async function init() {
+  // Проверяем режим (demo или live)
+  try {
+    const status = await fetch('/api/status').then(r=>r.json());
+    if (status.ok && status.data?.demo) {
+      IS_DEMO = true;
+      $('demoBanner').style.display  = 'flex';
+      $('demoOverlay').style.display = 'flex';
+      console.info('🎭 Demo mode — используются мок-данные');
+    }
+  } catch(e) {
+    // сервер не запущен — переходим в демо
+    IS_DEMO = true;
+    $('demoBanner').style.display  = 'flex';
+    $('demoOverlay').style.display = 'flex';
+  }
+
+  await loadAndRender();
+  if (!IS_DEMO) connectSSE();
+  setInterval(loadAndRender, IS_DEMO ? 10000 : 30000);
+  window.addEventListener('resize', loadAndRender);
+}
+
+init();
 </script>
 </body>
 </html>

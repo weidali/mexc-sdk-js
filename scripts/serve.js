@@ -80,7 +80,6 @@ const routes = {
     const res = await fetch(url);
     const json = await res.json();
     if (!json.success) throw new Error(json.message || 'klines error');
-    // Преобразуем в массив OHLCV объектов
     const { time, open, close, high, low, vol } = json.data;
     return time.map((t, i) => ({
       time:   t * 1000,
@@ -90,6 +89,10 @@ const routes = {
       close:  close[i],
       volume: vol[i],
     }));
+  },
+ 
+  '/api/status': async () => {
+    return { demo: !API_KEY || !API_SECRET, hasKeys: !!(API_KEY && API_SECRET) };
   },
 };
 
