@@ -223,7 +223,7 @@
       <div class="chart-header">
         <div class="chart-title">
           <span>📊 1H — Тренд &amp; контекст</span>
-          <span class="badge badge-gray">200 свечей</span>
+          <span class="badge badge-gray" id="badge1h">80 / 500 свечей</span>
         </div>
         <div style="display:flex;gap:5px;align-items:center">
           <div id="h1Badges" style="display:flex;gap:5px"></div>
@@ -248,7 +248,7 @@
       <div class="chart-header">
         <div class="chart-title">
           <span>🎯 15M — Точка входа в LONG</span>
-          <span class="badge badge-gray">150 свечей</span>
+          <span class="badge badge-gray" id="badge15m">60 / 300 свечей</span>
         </div>
         <div style="display:flex;gap:5px;align-items:center">
           <div id="m15Badges" style="display:flex;gap:5px"></div>
@@ -954,13 +954,17 @@ function updateSignalsLog(newSignals1h, newSignals15m) {
 async function loadAndRender() {
   try {
     const [klines1h, klines15m, ticker] = await Promise.all([
-      fetch('/api/klines?symbol=BTC_USDT&interval=Min60&limit=200').then(r=>r.json()),
-      fetch('/api/klines?symbol=BTC_USDT&interval=Min15&limit=150').then(r=>r.json()),
+      fetch('/api/klines?symbol=BTC_USDT&interval=Min60&limit=500').then(r=>r.json()),
+      fetch('/api/klines?symbol=BTC_USDT&interval=Min15&limit=300').then(r=>r.json()),
       fetch('/api/ticker?symbol=BTC_USDT').then(r=>r.json()),
     ]);
 
-    const c1h  = klines1h.data;
-    const c15m = klines15m.data;
+    const c1h_full  = klines1h.data;   // 500 свечей — для расчёта индикаторов
+    const c15m_full = klines15m.data;  // 300 свечей — для расчёта индикаторов
+    const SHOW_1H  = 80;               // свечей на графике 1H
+    const SHOW_15M = 60;               // свечей на графике 15M
+    const c1h  = c1h_full.slice(-SHOW_1H);    // последние 80 для отрисовки
+    const c15m = c15m_full.slice(-SHOW_15M);  // последние 60 для отрисовки
 
     // Ticker
     if (ticker.ok) {
@@ -971,15 +975,18 @@ async function loadAndRender() {
       $('symChange').className   = 'symbol-change ' + (ch >= 0 ? 'up' : 'down');
     }
 
-    // ── 1H Индикаторы ──
-    const closes1h  = c1h.map(c => c.close);
+    // ── 1H Индикаторы (на полном массиве 500 свечей) ──
+    const closes1h  = c1h_full.map(c => c.close);
     const ema20_1h  = calcEMA(closes1h, 20);
     const ema50_1h  = calcEMA(closes1h, 50);
     const ema200_1h = calcEMA(closes1h, 200);
     const rsi1h     = calcRSI(closes1h, 14);
     const macd1h    = calcMACD(closes1h);
     const bb1h      = calcBB(closes1h, 20);
-    const vwap1h    = calcVWAP(c1h);
+    const vwap1h    = calcVWAP(c1h_full);
+
+    // Slice индикаторов до размера графика
+    const sl1h = (arr) => arr ? arr.slice(-SHOW_1H) : arr;
 
     // Тренд 1H
     const trend1h = detectTrend(c1h, ema20_1h, ema50_1h, ema200_1h);
@@ -998,7 +1005,7 @@ async function loadAndRender() {
     tdb.className   = trend1d.cls;
 
     // RSI display
-    const lastRsi1h = rsi1h.filter(v=>v!==null).pop();
+    const lastRsi1h = rsi1h.filter(v=>v!==null).pop();  // из полного массива
     const rsiEl = $('rsi1h');
     rsiEl.textContent = lastRsi1h ? lastRsi1h.toFixed(1) : '—';
     rsiEl.style.color = !lastRsi1h ? 'var(--text2)' : lastRsi1h < 30 ? 'var(--yellow)' : lastRsi1h > 70 ? 'var(--red)' : 'var(--text)';
@@ -1014,7 +1021,7 @@ async function loadAndRender() {
     }
 
     // EMA status
-    const n1h = c1h.length - 1;
+    const n1h = c1h_full.length - 1;
     const e20 = ema20_1h[n1h], e50 = ema50_1h[n1h], e200 = ema200_1h[n1h];
     const bullAlign = e20 > e50 && e50 > e200;
     const bearAlign = e20 < e50 && e50 < e200;
@@ -1023,7 +1030,7 @@ async function loadAndRender() {
     $('emaSub').textContent = `EMA20:${fmt(e20,0)} EMA50:${fmt(e50,0)} EMA200:${fmt(e200,0)}`;
 
     // BB status
-    const lastClose1h = closes1h[closes1h.length-1];
+    const lastClose1h = closes1h[closes1h.length-1];  // последняя закрытая свеча из full
     const bbWidth = bb1h.upper[n1h] && bb1h.lower[n1h] ? ((bb1h.upper[n1h] - bb1h.lower[n1h]) / bb1h.middle[n1h] * 100).toFixed(2) : 0;
     const bbPos = lastClose1h > bb1h.upper[n1h] ? 'выше верхней' : lastClose1h < bb1h.lower[n1h] ? 'ниже нижней' : 'внутри';
     $('bbStatus').textContent = bbPos === 'внутри' ? '✅ В диапазоне' : bbPos === 'выше верхней' ? '⚠️ Перекуплен' : '⚠️ Перепродан';
@@ -1037,15 +1044,22 @@ async function loadAndRender() {
     $('vwapStatus').style.color = vwapAbove ? 'var(--green)' : 'var(--red)';
     $('vwapSub').textContent = `VWAP: $${fmt(lastVwap, 1)} · Δ ${sign(lastClose1h-lastVwap)}${fmt(lastClose1h-lastVwap, 1)}`;
 
-    // Сигналы 1H
-    const { signals: sig1h, twoGreenIdx } = findSignals1H(c1h, ema20_1h, ema50_1h, rsi1h, bb1h, vwap1h);
+    // Сигналы 1H (поиск на полном массиве)
+    const { signals: sig1h, twoGreenIdx: twoGreenIdxFull } = findSignals1H(c1h_full, ema20_1h, ema50_1h, rsi1h, bb1h, vwap1h);
+    // Конвертируем индексы для отображения на усечённом графике
+    const offset1h = c1h_full.length - SHOW_1H;
+    const twoGreenIdx = twoGreenIdxFull.filter(i => i >= offset1h).map(i => i - offset1h);
 
-    // ── 15M Индикаторы ──
-    const closes15m = c15m.map(c => c.close);
+    // ── 15M Индикаторы (на полном массиве 300 свечей) ──
+    const closes15m = c15m_full.map(c => c.close);
     const ema9_15m  = calcEMA(closes15m, 9);
     const ema21_15m = calcEMA(closes15m, 21);
     const rsi15m    = calcRSI(closes15m, 14);
-    const { signals: sig15m, entrySignals } = findSignals15M(c15m, ema9_15m, ema21_15m, rsi15m, trend1h.score >= 2);
+    const { signals: sig15m, entrySignals: entrySignalsFull } = findSignals15M(c15m_full, ema9_15m, ema21_15m, rsi15m, trend1h.score >= 2);
+    // Конвертируем индексы маркеров для усечённого графика
+    const offset15m = c15m_full.length - SHOW_15M;
+    const entrySignals = entrySignalsFull.filter(s => s.idx >= offset15m).map(s => ({ ...s, idx: s.idx - offset15m }));
+    const sl15m = (arr) => arr ? arr.slice(-SHOW_15M) : arr;
 
     // 15M status
     const lastSig = entrySignals[entrySignals.length - 1];
@@ -1063,14 +1077,19 @@ async function loadAndRender() {
     const markers1h = twoGreenIdx.map(i => ({ idx: i, color: '#00d97e', type: 'two_green' }));
 
     drawCandleChart('chart1h', c1h, {
-      ema20: ema20_1h, ema50: ema50_1h, ema200: ema200_1h,
-      bbUpper: bb1h.upper, bbLower: bb1h.lower, bbMiddle: bb1h.middle,
-      vwap: vwap1h,
-    }, markers1h, rsi1h, macd1h);
+      ema20:   sl1h(ema20_1h),
+      ema50:   sl1h(ema50_1h),
+      ema200:  sl1h(ema200_1h),
+      bbUpper: sl1h(bb1h.upper),
+      bbLower: sl1h(bb1h.lower),
+      bbMiddle:sl1h(bb1h.middle),
+      vwap:    sl1h(vwap1h),
+    }, markers1h, sl1h(rsi1h), { macd: sl1h(macd1h.macd), signal: sl1h(macd1h.signal), hist: sl1h(macd1h.hist) });
 
     drawCandleChart('chart15m', c15m, {
-      ema9: ema9_15m, ema21: ema21_15m,
-    }, entrySignals, rsi15m, null);
+      ema9:  sl15m(ema9_15m),
+      ema21: sl15m(ema21_15m),
+    }, entrySignals, sl15m(rsi15m), null);
 
     // ── Логи сигналов ──
     updateSignalsLog(sig1h, sig15m);

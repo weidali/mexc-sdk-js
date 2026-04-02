@@ -75,7 +75,7 @@ const routes = {
   '/api/klines': async (params) => {
     const symbol   = params.symbol   || 'BTC_USDT';
     const interval = params.interval || 'Min60';
-    const limit    = Math.min(parseInt(params.limit) || 200, 500);
+    const limit    = Math.min(parseInt(params.limit) || 200, 2000);
     const url = `https://contract.mexc.com/api/v1/contract/kline/${symbol}?interval=${interval}&limit=${limit}`;
     const res = await fetch(url);
     const json = await res.json();
@@ -131,7 +131,7 @@ const server = createServer(async (req, res) => {
   // Статика из docs/
   let filePath = path === '/' ? '/index.html' : path;
   const file = join(DOCS, filePath);
-
+ 
   if (!existsSync(file)) {
     res.writeHead(404); res.end('Not found'); return;
   }
