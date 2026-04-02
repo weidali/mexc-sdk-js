@@ -629,7 +629,7 @@ function findSignals1H(candles, ema20, ema50, rsi, bb, vwap) {
     }
   }
 
-  return { signals: signals.slice(-10).reverse(), twoGreenIdx };
+  return { signals: signals.slice(-10), twoGreenIdx }; // хронологический порядок
 }
 
 // ─── 15M: Точка входа с multi-factor confluence ─────────────────────────────
@@ -745,7 +745,7 @@ function findSignals15M(candles, ema9, ema21, rsi, trend1hBull = true) {
     }
   }
 
-  return { signals: signals.slice(-10).reverse(), entrySignals };
+  return { signals: signals.slice(-10), entrySignals }; // хронологический порядок
 }
 
 // ═══════════════════════════════════════════
@@ -1027,14 +1027,23 @@ function renderSignalList(listId, countId, log) {
 }
 
 function updateSignalsLog(newSignals1h, newSignals15m) {
-  for (const s of newSignals1h) {
-    if (!signalsLog1h.find(x => x.type === s.type && x.time === s.time)) signalsLog1h.unshift(s);
-  }
-  for (const s of newSignals15m) {
-    if (!signalsLog15m.find(x => x.type === s.type && x.time === s.time)) signalsLog15m.unshift(s);
-  }
-  signalsLog1h  = signalsLog1h.slice(0, 20);
-  signalsLog15m = signalsLog15m.slice(0, 20);
+  const merge = (log, incoming) => {
+    for (const s of incoming) {
+      if (!log.find(x => x.type === s.type && x.time === s.time)) {
+        log.push(s);
+      }
+    }
+    // Сортируем по времени убывания — новые сверху
+    log.sort((a, b) => {
+      // time может быть строкой "14:30" — сортируем по idx как запасной вариант
+      if (a.idx !== undefined && b.idx !== undefined) return b.idx - a.idx;
+      return b.time > a.time ? 1 : -1;
+    });
+    return log.slice(0, 20);
+  };
+
+  signalsLog1h  = merge(signalsLog1h,  newSignals1h);
+  signalsLog15m = merge(signalsLog15m, newSignals15m);
 
   renderSignalList('signalsList1h',  'sigCount1h',  signalsLog1h);
   renderSignalList('signalsList15m', 'sigCount15m', signalsLog15m);
