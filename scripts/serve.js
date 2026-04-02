@@ -90,9 +90,14 @@ const routes = {
       volume: vol[i],
     }));
   },
- 
+
   '/api/status': async () => {
     return { demo: !API_KEY || !API_SECRET, hasKeys: !!(API_KEY && API_SECRET) };
+  },
+
+  '/api/version': async () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+    return { version: pkg.version, name: pkg.name };
   },
 };
 
@@ -134,7 +139,7 @@ const server = createServer(async (req, res) => {
   // Статика из docs/
   let filePath = path === '/' ? '/index.html' : path;
   const file = join(DOCS, filePath);
- 
+
   if (!existsSync(file)) {
     res.writeHead(404); res.end('Not found'); return;
   }
