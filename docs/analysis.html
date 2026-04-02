@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analysis — mexc-sdk-js</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:     #0a0c0f;
+    --bg2:    #0f1217;
+    --bg3:    #141820;
+    --border: #1e2530;
+    --green:  #00d97e;
+    --green-dim: rgba(0,217,126,0.10);
+    --red:    #ff4d6a;
+    --red-dim: rgba(255,77,106,0.10);
+    --yellow: #f5c542;
+    --blue:   #3d8ef5;
+    --purple: #a78bfa;
+    --orange: #fb923c;
+    --text:   #e2e8f0;
+    --text2:  #7a8899;
+    --text3:  #3a4655;
+    --mono:   'JetBrains Mono', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px; min-height:100vh; }
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:1000;
+    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.02) 2px,rgba(0,0,0,0.02) 4px);
+  }
+
+  /* Header */
+  .header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px; height:52px; border-bottom:1px solid var(--border);
+    background:var(--bg2); position:sticky; top:0; z-index:100;
+  }
+  .logo { display:flex; align-items:center; gap:12px; text-decoration:none; }
+  .logo-icon { width:28px;height:28px;background:var(--green);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#000; }
+  .logo-text { font-size:14px;font-weight:600;color:var(--text); }
+  .logo-text span { color:var(--green); }
+  nav { display:flex; align-items:center; gap:4px; }
+  nav a { padding:6px 14px;border-radius:6px;font-size:12px;font-weight:500;color:var(--text2);text-decoration:none;transition:all .15s;border:1px solid transparent; }
+  nav a:hover { color:var(--text);background:rgba(255,255,255,.04); }
+  nav a.active { color:var(--green);background:var(--green-dim);border-color:rgba(0,217,126,.2); }
+  .header-right { display:flex; align-items:center; gap:10px; }
+  .badge { padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase; }
+  .badge-green  { background:var(--green-dim);color:var(--green);border:1px solid rgba(0,217,126,.2); }
+  .badge-red    { background:var(--red-dim);color:var(--red);border:1px solid rgba(255,77,106,.2); }
+  .badge-yellow { background:rgba(245,197,66,.1);color:var(--yellow);border:1px solid rgba(245,197,66,.2); }
+  .badge-gray   { background:rgba(255,255,255,.04);color:var(--text2);border:1px solid var(--border); }
+  .badge-blue   { background:rgba(61,142,245,.1);color:var(--blue);border:1px solid rgba(61,142,245,.2); }
+  .badge-purple { background:rgba(167,139,250,.1);color:var(--purple);border:1px solid rgba(167,139,250,.2); }
+  .live-dot { width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite;display:inline-block;margin-right:5px; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+  /* Layout */
+  .container { padding:16px 20px; max-width:100%; }
+
+  /* Symbol bar */
+  .symbol-bar {
+    display:flex; align-items:center; gap:12px;
+    background:var(--bg2); border:1px solid var(--border);
+    border-radius:10px; padding:12px 16px; margin-bottom:14px;
+  }
+  .symbol-price { font-size:22px;font-weight:700;letter-spacing:-1px; }
+  .symbol-change { font-size:13px;font-weight:600; }
+  .up { color:var(--green); } .down { color:var(--red); }
+  .sep { color:var(--text3); margin:0 4px; }
+
+  /* Trend badge */
+  .trend-badge {
+    display:flex; align-items:center; gap:6px;
+    padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700;
+    letter-spacing:.5px;
+  }
+  .trend-up   { background:var(--green-dim);color:var(--green);border:1px solid rgba(0,217,126,.25); }
+  .trend-down { background:var(--red-dim);color:var(--red);border:1px solid rgba(255,77,106,.25); }
+  .trend-side { background:rgba(245,197,66,.1);color:var(--yellow);border:1px solid rgba(245,197,66,.25); }
+
+  .signal-row { display:flex;gap:8px;margin-left:auto; }
+
+  /* Chart grid */
+  .charts-stack { display:flex; flex-direction:column; gap:14px; margin-bottom:14px; }
+  .chart-card { background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden; width:100%; }
+  .chart-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; border-bottom:1px solid var(--border);
+    background:rgba(255,255,255,.015);
+  }
+  .chart-title { font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text2);display:flex;align-items:center;gap:8px; }
+  .chart-body { padding:0; position:relative; min-height:300px; }
+  canvas { display:block; }
+
+  /* Legend */
+  .legend { display:flex;gap:12px;padding:8px 14px;border-top:1px solid var(--border);flex-wrap:wrap; }
+  .legend-item { display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2); }
+  .legend-line { width:16px;height:2px;border-radius:1px; }
+  .legend-dot  { width:8px;height:8px;border-radius:50%; }
+
+  /* Indicators panel */
+  .indicators-grid { display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px; }
+  .ind-card {
+    background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;
+  }
+  .ind-label { font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin-bottom:6px; }
+  .ind-value { font-size:18px;font-weight:700;letter-spacing:-.5px; }
+  .ind-sub   { font-size:10px;color:var(--text2);margin-top:3px; }
+
+  /* Signals list */
+  .signals-wrap { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .signals-card { background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden; }
+  .signals-card > div:last-child { max-height:320px; overflow-y:auto; }
+  .signal-item {
+    display:flex; align-items:center; gap:12px;
+    padding:10px 16px; border-bottom:1px solid rgba(255,255,255,.03);
+    font-size:12px;
+  }
+  .signal-item:last-child { border-bottom:none; }
+  .signal-icon { font-size:16px; flex-shrink:0; }
+  .signal-text { flex:1; color:var(--text); }
+  .signal-time { color:var(--text3); font-size:10px; }
+  .signal-strength {
+    padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700;
+  }
+  .str-strong { background:var(--green-dim);color:var(--green); }
+  .str-medium { background:rgba(245,197,66,.1);color:var(--yellow); }
+  .str-weak   { background:rgba(255,255,255,.04);color:var(--text2); }
+
+  /* Loading */
+  .loading {
+    display:flex; align-items:center; justify-content:center;
+    height:340px; color:var(--text3); font-size:12px; gap:8px;
+  }
+  .spin { width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  @media(max-width:900px) { .indicators-grid,.signals-wrap{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <a class="logo" href="index.html">
+    <div class="logo-icon">M</div>
+    <div class="logo-text">mexc-sdk<span>-js</span></div>
+  </a>
+  <nav>
+    <a href="index.html">Документация</a>
+    <a href="metrics.html">Метрики</a>
+    <a href="analysis.html" class="active">Анализ</a>
+  </nav>
+  <div class="header-right">
+    <span id="updateTime" style="font-size:10px;color:var(--text3)">обновление...</span>
+    <span class="badge badge-gray"><span class="live-dot"></span>AUTO</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Symbol bar -->
+  <div class="symbol-bar">
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px;letter-spacing:1px">BTC_USDT PERP</div>
+      <div style="display:flex;align-items:baseline;gap:10px">
+        <span class="symbol-price" id="symPrice">—</span>
+        <span class="symbol-change" id="symChange">—</span>
+      </div>
+    </div>
+    <div class="sep">|</div>
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Тренд 1H</div>
+      <div class="trend-badge trend-side" id="trendBadge">⏳ анализ...</div>
+    </div>
+    <div class="sep">|</div>
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px">Тренд 1D</div>
+      <div class="trend-badge trend-side" id="trendDayBadge">⏳ анализ...</div>
+    </div>
+    <div class="sep">|</div>
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px">RSI 1H</div>
+      <div style="font-size:16px;font-weight:700" id="rsi1h">—</div>
+    </div>
+    <div class="sep">|</div>
+    <div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:3px">MACD 1H</div>
+      <div style="font-size:16px;font-weight:700" id="macdSignal">—</div>
+    </div>
+    <div class="signal-row" id="signalRow"></div>
+  </div>
+
+  <!-- Indicators -->
+  <div class="indicators-grid">
+    <div class="ind-card">
+      <div class="ind-label">EMA 20 / 50 / 200 (1H)</div>
+      <div class="ind-value" id="emaStatus" style="font-size:13px;font-weight:600">—</div>
+      <div class="ind-sub" id="emaSub">загрузка...</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-label">Bollinger Bands (1H)</div>
+      <div class="ind-value" style="font-size:13px;font-weight:600" id="bbStatus">—</div>
+      <div class="ind-sub" id="bbSub">загрузка...</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-label">VWAP (1H)</div>
+      <div class="ind-value" style="font-size:13px;font-weight:600" id="vwapStatus">—</div>
+      <div class="ind-sub" id="vwapSub">загрузка...</div>
+    </div>
+    <div class="ind-card">
+      <div class="ind-label">Сигналы 15M</div>
+      <div class="ind-value" style="font-size:13px;font-weight:600" id="sig15mStatus">—</div>
+      <div class="ind-sub" id="sig15mSub">загрузка...</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts-stack">
+    <!-- 1H Chart — полная ширина -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">
+          <span>📊 1H — Тренд &amp; контекст</span>
+          <span class="badge badge-gray">200 свечей</span>
+        </div>
+        <div style="display:flex;gap:5px;align-items:center">
+          <div id="h1Badges" style="display:flex;gap:5px"></div>
+        </div>
+      </div>
+      <div class="chart-body">
+        <div class="loading" id="loading1h"><div class="spin"></div>загрузка свечей...</div>
+        <canvas id="chart1h" style="display:none"></canvas>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-line" style="background:#f5c542"></div>EMA20</div>
+        <div class="legend-item"><div class="legend-line" style="background:#3d8ef5"></div>EMA50</div>
+        <div class="legend-item"><div class="legend-line" style="background:#a78bfa"></div>EMA200</div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(61,142,245,.3);height:6px;border-radius:2px"></div>BB</div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(247,147,26,.6)"></div>VWAP</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green);opacity:.8"></div>2 зел. подряд</div>
+      </div>
+    </div>
+
+    <!-- 15M Chart — полная ширина -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">
+          <span>🎯 15M — Точка входа в LONG</span>
+          <span class="badge badge-gray">150 свечей</span>
+        </div>
+        <div style="display:flex;gap:5px;align-items:center">
+          <div id="m15Badges" style="display:flex;gap:5px"></div>
+        </div>
+      </div>
+      <div class="chart-body">
+        <div class="loading" id="loading15m"><div class="spin"></div>загрузка свечей...</div>
+        <canvas id="chart15m" style="display:none"></canvas>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-line" style="background:#f5c542"></div>EMA9</div>
+        <div class="legend-item"><div class="legend-line" style="background:#3d8ef5"></div>EMA21</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Первая зел. после красных</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>RSI oversold разворот</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div>EMA crossover</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div>Пин-бар</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signals log — две колонки по ТФ -->
+  <div class="signals-wrap">
+    <!-- 1H сигналы -->
+    <div class="signals-card">
+      <div class="chart-header">
+        <div class="chart-title">📊 Сигналы 1H</div>
+        <span class="badge badge-blue" id="sigCount1h">0 сигналов</span>
+      </div>
+      <div id="signalsList1h">
+        <div class="signal-item" style="color:var(--text3)">
+          <span class="signal-icon">⏳</span>
+          <span class="signal-text">Ожидание данных...</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 15M сигналы -->
+    <div class="signals-card">
+      <div class="chart-header">
+        <div class="chart-title">🎯 Сигналы 15M</div>
+        <span class="badge badge-green" id="sigCount15m">0 сигналов</span>
+      </div>
+      <div id="signalsList15m">
+        <div class="signal-item" style="color:var(--text3)">
+          <span class="signal-icon">⏳</span>
+          <span class="signal-text">Ожидание данных...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//   УТИЛИТЫ
+// ═══════════════════════════════════════════
+const $ = id => document.getElementById(id);
+const fmt  = (n, d=2) => Number(n).toLocaleString('ru-RU', {minimumFractionDigits:d, maximumFractionDigits:d});
+const sign = n => n >= 0 ? '+' : '';
+
+// ═══════════════════════════════════════════
+//   ИНДИКАТОРЫ
+// ═══════════════════════════════════════════
+
+function calcEMA(data, period) {
+  const k = 2 / (period + 1);
+  const ema = [];
+  let prev = data.slice(0, period).reduce((s,v) => s + v, 0) / period;
+  ema.push(...Array(period - 1).fill(null));
+  ema.push(prev);
+  for (let i = period; i < data.length; i++) {
+    prev = data[i] * k + prev * (1 - k);
+    ema.push(prev);
+  }
+  return ema;
+}
+
+function calcRSI(closes, period = 14) {
+  const rsi = Array(period).fill(null);
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain += Math.max(d, 0);
+    avgLoss += Math.max(-d, 0);
+  }
+  avgGain /= period; avgLoss /= period;
+  rsi.push(100 - 100 / (1 + avgGain / (avgLoss || 1e-10)));
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + Math.max(d, 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + Math.max(-d, 0)) / period;
+    rsi.push(100 - 100 / (1 + avgGain / (avgLoss || 1e-10)));
+  }
+  return rsi;
+}
+
+function calcMACD(closes) {
+  const ema12 = calcEMA(closes, 12);
+  const ema26 = calcEMA(closes, 26);
+  const macd  = ema12.map((v, i) => v && ema26[i] ? v - ema26[i] : null);
+  const validMacd = macd.filter(v => v !== null);
+  const signalRaw = calcEMA(validMacd, 9);
+  // Align signal to original length
+  const signal = Array(macd.length - signalRaw.length).fill(null).concat(signalRaw);
+  const hist   = macd.map((v, i) => v && signal[i] ? v - signal[i] : null);
+  return { macd, signal, hist };
+}
+
+function calcBB(closes, period = 20, mult = 2) {
+  const upper = [], middle = [], lower = [];
+  for (let i = 0; i < closes.length; i++) {
+    if (i < period - 1) { upper.push(null); middle.push(null); lower.push(null); continue; }
+    const slice = closes.slice(i - period + 1, i + 1);
+    const mean = slice.reduce((s,v) => s+v, 0) / period;
+    const std  = Math.sqrt(slice.reduce((s,v) => s + (v-mean)**2, 0) / period);
+    middle.push(mean);
+    upper.push(mean + mult * std);
+    lower.push(mean - mult * std);
+  }
+  return { upper, middle, lower };
+}
+
+function calcVWAP(candles) {
+  const vwap = [];
+  let cumVol = 0, cumPV = 0;
+  // Reset at start of each day
+  let lastDay = null;
+  for (const c of candles) {
+    const day = new Date(c.time).toDateString();
+    if (day !== lastDay) { cumVol = 0; cumPV = 0; lastDay = day; }
+    const tp = (c.high + c.low + c.close) / 3;
+    cumPV += tp * c.volume;
+    cumVol += c.volume;
+    vwap.push(cumVol ? cumPV / cumVol : c.close);
+  }
+  return vwap;
+}
+
+// ═══════════════════════════════════════════
+//   ОПРЕДЕЛЕНИЕ ТРЕНДА
+// ═══════════════════════════════════════════
+
+function detectTrend(candles, ema20, ema50, ema200) {
+  const n = candles.length - 1;
+  const close = candles[n].close;
+  const e20 = ema20[n], e50 = ema50[n], e200 = ema200[n];
+
+  // Считаем очки тренда
+  let score = 0;
+  const reasons = [];
+
+  // EMA alignment
+  if (e20 > e50 && e50 > e200)  { score += 3; reasons.push('EMA бычье выравнивание'); }
+  else if (e20 < e50 && e50 < e200) { score -= 3; reasons.push('EMA медвежье выравнивание'); }
+
+  // Price vs EMAs
+  if (close > e200) { score += 1; reasons.push('Цена выше EMA200'); }
+  else              { score -= 1; reasons.push('Цена ниже EMA200'); }
+  if (close > e50)  { score += 1; } else { score -= 1; }
+  if (close > e20)  { score += 1; } else { score -= 1; }
+
+  // Last 5 candles direction
+  const last5 = candles.slice(-5);
+  const bullish = last5.filter(c => c.close > c.open).length;
+  if (bullish >= 4) { score += 1; reasons.push('4/5 последних свечей бычьи'); }
+  else if (bullish <= 1) { score -= 1; reasons.push('4/5 последних свечей медвежьи'); }
+
+  // Higher highs / lower lows
+  const highs = candles.slice(-10).map(c => c.high);
+  const lows  = candles.slice(-10).map(c => c.low);
+  const hhhl = highs[highs.length-1] > highs[0] && lows[lows.length-1] > lows[0];
+  const lhll = highs[highs.length-1] < highs[0] && lows[lows.length-1] < lows[0];
+  if (hhhl) { score += 1; reasons.push('HH + HL (восходящая структура)'); }
+  if (lhll) { score -= 1; reasons.push('LH + LL (нисходящая структура)'); }
+
+  let trend, cls;
+  if (score >= 4)       { trend = '📈 ВОСХОДЯЩИЙ'; cls = 'trend-badge trend-up'; }
+  else if (score <= -4) { trend = '📉 НИСХОДЯЩИЙ'; cls = 'trend-badge trend-down'; }
+  else                  { trend = '➡️ БОКОВИК';    cls = 'trend-badge trend-side'; }
+
+  return { trend, cls, score, reasons };
+}
+
+// ═══════════════════════════════════════════
+//   ПОИСК СИГНАЛОВ
+// ═══════════════════════════════════════════
+
+function findSignals1H(candles, ema20, ema50, rsi, bb, vwap) {
+  const signals = [];
+  const twoGreenIdx = [];
+
+  for (let i = 1; i < candles.length; i++) {
+    const c  = candles[i];
+    const cp = candles[i - 1];
+
+    // Две зелёные свечи подряд
+    if (c.close > c.open && cp.close > cp.open) {
+      twoGreenIdx.push(i);
+      // Только если в контексте тренда (цена выше EMA50)
+      if (ema50[i] && c.close > ema50[i]) {
+        const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        signals.push({
+          type: 'TWO_GREEN_1H',
+          text: `1H: Две зелёные свечи выше EMA50 (${fmt(c.close, 1)})`,
+          time, strength: 'medium', icon: '🟢', idx: i,
+        });
+      }
+    }
+
+    // BB сжатие → пробой вверх
+    if (bb.upper[i] && bb.lower[i]) {
+      const width = (bb.upper[i] - bb.lower[i]) / bb.middle[i];
+      if (width < 0.02 && c.close > c.open) {
+        const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        signals.push({ type: 'BB_SQUEEZE', text: `1H: BB сжатие + бычья свеча`, time, strength: 'strong', icon: '💥', idx: i });
+      }
+    }
+  }
+
+  return { signals, twoGreenIdx };
+}
+
+function findSignals15M(candles, ema9, ema21, rsi) {
+  const signals = [];
+  const entrySignals = []; // индексы для отрисовки на графике
+
+  for (let i = 2; i < candles.length; i++) {
+    const c   = candles[i];
+    const cp  = candles[i - 1];
+    const cpp = candles[i - 2];
+    const time = new Date(c.time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+
+    // 1. EMA9 пересекает EMA21 снизу вверх
+    if (ema9[i] && ema21[i] && ema9[i-1] && ema21[i-1]) {
+      if (ema9[i-1] < ema21[i-1] && ema9[i] > ema21[i]) {
+        signals.push({ type: 'EMA_CROSS', text: `15M: EMA9 пересекла EMA21 вверх`, time, strength: 'strong', icon: '⚡', idx: i });
+        entrySignals.push({ idx: i, type: 'cross', color: '#a78bfa' });
+      }
+    }
+
+    // 2. RSI oversold + разворот (RSI < 35 → разворот вверх)
+    if (rsi[i-1] && rsi[i] && rsi[i-1] < 35 && rsi[i] > rsi[i-1] && c.close > c.open) {
+      signals.push({ type: 'RSI_REVERSAL', text: `15M: RSI разворот с перепроданности (${rsi[i-1].toFixed(1)})`, time, strength: 'strong', icon: '🔄', idx: i });
+      entrySignals.push({ idx: i, type: 'rsi', color: '#f5c542' });
+    }
+
+    // 3. Первая зелёная свеча после двух красных + выше EMA9
+    if (c.close > c.open && cp.close < cp.open && cpp.close < cpp.open && ema9[i] && c.close > ema9[i]) {
+      signals.push({ type: 'FIRST_GREEN', text: `15M: Первая зел. свеча после красных + выше EMA9`, time, strength: 'medium', icon: '🌱', idx: i });
+      entrySignals.push({ idx: i, type: 'green', color: '#00d97e' });
+    }
+
+    // 4. Pin bar разворот (длинная тень снизу)
+    const bodySize = Math.abs(c.close - c.open);
+    const lowerWick = Math.min(c.open, c.close) - c.low;
+    if (lowerWick > bodySize * 2.5 && c.close > c.open && ema9[i] && c.low < ema9[i]) {
+      signals.push({ type: 'PIN_BAR', text: `15M: Пин-бар на EMA9 (отскок)`, time, strength: 'medium', icon: '📌', idx: i });
+      entrySignals.push({ idx: i, type: 'pin', color: '#fb923c' });
+    }
+  }
+
+  // Оставляем только последние 15 сигналов
+  return { signals: signals.slice(-15).reverse(), entrySignals };
+}
+
+// ═══════════════════════════════════════════
+//   ОТРИСОВКА СВЕЧНОГО ГРАФИКА
+// ═══════════════════════════════════════════
+
+function drawCandleChart(canvasId, candles, overlays = {}, markers = [], rsiData = null, macdData = null) {
+  const canvas = $(canvasId);
+  const dpr = window.devicePixelRatio || 1;
+  const W   = canvas.parentElement.offsetWidth;
+
+  // Высота: основной + RSI + MACD (если есть)
+  const mainH = 340;
+  const rsiH  = rsiData  ? 60 : 0;
+  const macdH = macdData ? 60 : 0;
+  const H = mainH + rsiH + macdH + (rsiH ? 4 : 0) + (macdH ? 4 : 0);
+
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const N    = candles.length;
+  const padL = 8, padR = 52, padT = 12, padB = 4;
+  const cW   = W - padL - padR;
+
+  const candleW  = Math.max(1, cW / N);
+  const candleGap = Math.max(0.5, candleW * 0.15);
+  const bodyW    = Math.max(1, candleW - candleGap * 2);
+
+  // Ценовой диапазон
+  const prices = candles.flatMap(c => [c.high, c.low]);
+  if (overlays.bbUpper) overlays.bbUpper.forEach(v => v && prices.push(v));
+  let minP = Math.min(...prices), maxP = Math.max(...prices);
+  const pad5 = (maxP - minP) * 0.05;
+  minP -= pad5; maxP += pad5;
+  const rangeP = maxP - minP;
+
+  const xOf  = i => padL + i * candleW + candleW / 2;
+  const yOf  = v => padT + mainH - padB - ((v - minP) / rangeP) * (mainH - padT - padB);
+
+  // --- Фон ---
+  ctx.fillStyle = '#0a0c0f';
+  ctx.fillRect(0, 0, W, H);
+
+  // --- Grid ---
+  ctx.strokeStyle = '#1e2530'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ((mainH - padT - padB) / 4) * i;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    const price = maxP - (rangeP / 4) * i;
+    ctx.fillStyle = '#3a4655'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText(fmt(price, 0), W - padR + 3, y + 3);
+  }
+
+  // --- Bollinger Bands ---
+  if (overlays.bbUpper && overlays.bbLower && overlays.bbMiddle) {
+    ctx.fillStyle = 'rgba(61,142,245,0.04)';
+    ctx.beginPath();
+    overlays.bbUpper.forEach((v, i) => { if (v) { if (i === 0 || !overlays.bbUpper[i-1]) ctx.moveTo(xOf(i), yOf(v)); else ctx.lineTo(xOf(i), yOf(v)); } });
+    overlays.bbLower.slice().reverse().forEach((v, i) => { if (v) { ctx.lineTo(xOf(N-1-i), yOf(v)); } });
+    ctx.closePath(); ctx.fill();
+
+    const drawLine = (data, color, dash = []) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash(dash);
+      ctx.beginPath(); let first = true;
+      data.forEach((v, i) => { if (!v) return; first ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)); first = false; });
+      ctx.stroke(); ctx.setLineDash([]);
+    };
+    drawLine(overlays.bbUpper,  'rgba(61,142,245,0.4)', [3,3]);
+    drawLine(overlays.bbLower,  'rgba(61,142,245,0.4)', [3,3]);
+    drawLine(overlays.bbMiddle, 'rgba(61,142,245,0.25)');
+  }
+
+  // --- VWAP ---
+  if (overlays.vwap) {
+    ctx.strokeStyle = 'rgba(247,147,26,0.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,3]);
+    ctx.beginPath(); let first = true;
+    overlays.vwap.forEach((v, i) => { v && (first ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v))); first = false; });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // --- EMAs ---
+  const emaStyles = [
+    { key: 'ema20',  color: '#f5c542', w: 1.5 },
+    { key: 'ema50',  color: '#3d8ef5', w: 1.5 },
+    { key: 'ema200', color: '#a78bfa', w: 2 },
+    { key: 'ema9',   color: '#f5c542', w: 1.5 },
+    { key: 'ema21',  color: '#3d8ef5', w: 1.5 },
+  ];
+  emaStyles.forEach(({ key, color, w }) => {
+    if (!overlays[key]) return;
+    ctx.strokeStyle = color; ctx.lineWidth = w;
+    ctx.beginPath(); let first = true;
+    overlays[key].forEach((v, i) => { if (!v) return; first ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)); first = false; });
+    ctx.stroke();
+  });
+
+  // --- Свечи ---
+  candles.forEach((c, i) => {
+    const x    = xOf(i);
+    const isUp = c.close >= c.open;
+    const col  = isUp ? '#00d97e' : '#ff4d6a';
+    const yH = yOf(c.high), yL = yOf(c.low);
+    const yO = yOf(Math.max(c.open, c.close));
+    const yC = yOf(Math.min(c.open, c.close));
+    const bH = Math.max(1, yC - yO);
+
+    // Фитиль
+    ctx.strokeStyle = col; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, yH); ctx.lineTo(x, yL); ctx.stroke();
+
+    // Тело
+    ctx.fillStyle = isUp ? col : col;
+    ctx.globalAlpha = isUp ? 0.9 : 0.7;
+    ctx.fillRect(x - bodyW/2, yO, bodyW, bH);
+    ctx.globalAlpha = 1;
+  });
+
+  // --- Маркеры ---
+  markers.forEach(m => {
+    const x = xOf(m.idx);
+    const y = yOf(candles[m.idx].low) + 12;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = m.color;
+    ctx.fill();
+    // Highlight свечи
+    ctx.fillStyle = m.color + '22';
+    ctx.fillRect(x - candleW/2, padT, candleW, mainH - padT - padB);
+  });
+
+  // --- Метка текущей цены ---
+  const lastClose = candles[N-1].close;
+  const yLast = yOf(lastClose);
+  ctx.strokeStyle = '#00d97e44'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(padL, yLast); ctx.lineTo(W - padR, yLast); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#00d97e'; ctx.fillRect(W - padR + 1, yLast - 8, padR - 2, 16);
+  ctx.fillStyle = '#000'; ctx.font = 'bold 9px JetBrains Mono'; ctx.textAlign = 'center';
+  ctx.fillText(fmt(lastClose, 0), W - padR + padR/2, yLast + 3);
+
+  // --- RSI panel ---
+  if (rsiData) {
+    const rsiY0 = mainH + 4;
+    ctx.fillStyle = '#0f1217';
+    ctx.fillRect(0, rsiY0, W, rsiH);
+    ctx.fillStyle = '#1e2530'; ctx.fillRect(padL, rsiY0, cW, rsiH);
+
+    // Label
+    ctx.fillStyle = '#3a4655'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('RSI(14)', padL + 2, rsiY0 + 10);
+
+    // Zones
+    const ry  = (v) => rsiY0 + rsiH - (v / 100) * rsiH;
+    ctx.fillStyle = 'rgba(0,217,126,0.06)';
+    ctx.fillRect(padL, ry(70), cW, ry(30) - ry(70));
+
+    [30, 50, 70].forEach(v => {
+      ctx.strokeStyle = v === 50 ? '#262f3d' : (v === 30 ? '#ff4d6a33' : '#00d97e33');
+      ctx.lineWidth = 1; ctx.setLineDash(v === 50 ? [3,3] : []);
+      ctx.beginPath(); ctx.moveTo(padL, ry(v)); ctx.lineTo(W - padR, ry(v)); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#3a4655'; ctx.font = '8px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(v, W - padR + 3, ry(v) + 3);
+    });
+
+    // RSI line
+    ctx.strokeStyle = '#e879f9'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); let first = true;
+    rsiData.forEach((v, i) => {
+      if (v === null) return;
+      first ? ctx.moveTo(xOf(i), ry(v)) : ctx.lineTo(xOf(i), ry(v));
+      first = false;
+    });
+    ctx.stroke();
+
+    // Текущий RSI
+    const lastRsi = rsiData.filter(v => v !== null).pop();
+    if (lastRsi) {
+      const col = lastRsi < 30 ? '#f5c542' : lastRsi > 70 ? '#ff4d6a' : '#e879f9';
+      ctx.fillStyle = col; ctx.font = 'bold 9px JetBrains Mono'; ctx.textAlign = 'right';
+      ctx.fillText(lastRsi.toFixed(1), W - padR - 2, ry(lastRsi) - 2);
+    }
+  }
+
+  // --- MACD panel ---
+  if (macdData) {
+    const macdY0 = mainH + (rsiH ? rsiH + 4 : 0) + 4;
+    ctx.fillStyle = '#0f1217';
+    ctx.fillRect(0, macdY0, W, macdH);
+
+    ctx.fillStyle = '#3a4655'; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+    ctx.fillText('MACD', padL + 2, macdY0 + 10);
+
+    const validHist = macdData.hist.filter(v => v !== null);
+    const maxH = Math.max(...validHist.map(Math.abs)) * 1.1 || 1;
+    const my   = v => macdY0 + macdH/2 - (v / maxH) * (macdH/2 - 4);
+
+    // Zero line
+    ctx.strokeStyle = '#262f3d'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, macdY0 + macdH/2); ctx.lineTo(W-padR, macdY0 + macdH/2); ctx.stroke();
+
+    // Histogram
+    macdData.hist.forEach((v, i) => {
+      if (v === null) return;
+      ctx.fillStyle = v >= 0 ? 'rgba(0,217,126,0.5)' : 'rgba(255,77,106,0.5)';
+      const y = my(v), h = Math.abs(my(v) - (macdY0 + macdH/2));
+      ctx.fillRect(xOf(i) - bodyW/2, Math.min(y, macdY0+macdH/2), bodyW, Math.max(1,h));
+    });
+
+    // MACD & Signal lines
+    const drawMacdLine = (data, color) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+      ctx.beginPath(); let first = true;
+      data.forEach((v, i) => { if (!v) return; first ? ctx.moveTo(xOf(i), my(v)) : ctx.lineTo(xOf(i), my(v)); first = false; });
+      ctx.stroke();
+    };
+    drawMacdLine(macdData.macd,   '#3d8ef5');
+    drawMacdLine(macdData.signal, '#f5c542');
+  }
+}
+
+// ═══════════════════════════════════════════
+//   ОБНОВЛЕНИЕ UI
+// ═══════════════════════════════════════════
+
+let signalsLog1h  = [];
+let signalsLog15m = [];
+
+function renderSignalList(listId, countId, log) {
+  const list = $(listId);
+  $(countId).textContent = log.length + ' сигналов';
+  if (log.length === 0) {
+    list.innerHTML = `<div class="signal-item" style="color:var(--text3)"><span class="signal-icon">😴</span><span class="signal-text">Сигналов нет</span></div>`;
+    return;
+  }
+  const STRENGTH = { strong: 'СИЛЬНЫЙ', medium: 'СРЕДНИЙ', weak: 'СЛАБЫЙ' };
+  list.innerHTML = log.map(s => `
+    <div class="signal-item">
+      <span class="signal-icon">${s.icon}</span>
+      <span class="signal-text">${s.text}</span>
+      <span class="signal-time">${s.time}</span>
+      <span class="signal-strength str-${s.strength}">${STRENGTH[s.strength] || s.strength}</span>
+    </div>
+  `).join('');
+}
+
+function updateSignalsLog(newSignals1h, newSignals15m) {
+  for (const s of newSignals1h) {
+    if (!signalsLog1h.find(x => x.type === s.type && x.time === s.time)) signalsLog1h.unshift(s);
+  }
+  for (const s of newSignals15m) {
+    if (!signalsLog15m.find(x => x.type === s.type && x.time === s.time)) signalsLog15m.unshift(s);
+  }
+  signalsLog1h  = signalsLog1h.slice(0, 20);
+  signalsLog15m = signalsLog15m.slice(0, 20);
+
+  renderSignalList('signalsList1h',  'sigCount1h',  signalsLog1h);
+  renderSignalList('signalsList15m', 'sigCount15m', signalsLog15m);
+}
+
+// ═══════════════════════════════════════════
+//   ГЛАВНАЯ ФУНКЦИЯ ЗАГРУЗКИ
+// ═══════════════════════════════════════════
+
+async function loadAndRender() {
+  try {
+    const [klines1h, klines15m, ticker] = await Promise.all([
+      fetch('/api/klines?symbol=BTC_USDT&interval=Min60&limit=200').then(r=>r.json()),
+      fetch('/api/klines?symbol=BTC_USDT&interval=Min15&limit=150').then(r=>r.json()),
+      fetch('/api/ticker?symbol=BTC_USDT').then(r=>r.json()),
+    ]);
+
+    const c1h  = klines1h.data;
+    const c15m = klines15m.data;
+
+    // Ticker
+    if (ticker.ok) {
+      const t = ticker.data;
+      $('symPrice').textContent  = '$' + fmt(t.lastPrice, 1);
+      const ch = t.riseFallRate * 100;
+      $('symChange').textContent = sign(ch) + fmt(ch) + '%';
+      $('symChange').className   = 'symbol-change ' + (ch >= 0 ? 'up' : 'down');
+    }
+
+    // ── 1H Индикаторы ──
+    const closes1h  = c1h.map(c => c.close);
+    const ema20_1h  = calcEMA(closes1h, 20);
+    const ema50_1h  = calcEMA(closes1h, 50);
+    const ema200_1h = calcEMA(closes1h, 200);
+    const rsi1h     = calcRSI(closes1h, 14);
+    const macd1h    = calcMACD(closes1h);
+    const bb1h      = calcBB(closes1h, 20);
+    const vwap1h    = calcVWAP(c1h);
+
+    // Тренд 1H
+    const trend1h = detectTrend(c1h, ema20_1h, ema50_1h, ema200_1h);
+    const tb = $('trendBadge');
+    tb.textContent = trend1h.trend;
+    tb.className   = trend1h.cls;
+
+    // Тренд дневной (используем 1H данные за 24 свечи)
+    const dayCandles = c1h.slice(-24);
+    const closes1d = dayCandles.map(c => c.close);
+    const ema20d   = calcEMA(closes1d, Math.min(20, closes1d.length-1));
+    const ema50d   = calcEMA(closes1d, Math.min(14, closes1d.length-1));
+    const trend1d  = detectTrend(dayCandles, ema20d, ema50d, ema20d);
+    const tdb = $('trendDayBadge');
+    tdb.textContent = trend1d.trend.replace('1H', '1D');
+    tdb.className   = trend1d.cls;
+
+    // RSI display
+    const lastRsi1h = rsi1h.filter(v=>v!==null).pop();
+    const rsiEl = $('rsi1h');
+    rsiEl.textContent = lastRsi1h ? lastRsi1h.toFixed(1) : '—';
+    rsiEl.style.color = !lastRsi1h ? 'var(--text2)' : lastRsi1h < 30 ? 'var(--yellow)' : lastRsi1h > 70 ? 'var(--red)' : 'var(--text)';
+
+    // MACD signal
+    const lastHist = macd1h.hist.filter(v=>v!==null).pop();
+    const lastHistPrev = macd1h.hist.filter(v=>v!==null).slice(-2)[0];
+    const macdEl = $('macdSignal');
+    if (lastHist !== undefined) {
+      const rising = lastHist > lastHistPrev;
+      macdEl.textContent = lastHist >= 0 ? (rising ? '↑ БЫЧИЙ' : '↗ БЫЧИЙ') : (rising ? '↗ РАЗВОРОТ' : '↓ МЕДВЕЖИЙ');
+      macdEl.style.color = lastHist >= 0 ? 'var(--green)' : (rising ? 'var(--yellow)' : 'var(--red)');
+    }
+
+    // EMA status
+    const n1h = c1h.length - 1;
+    const e20 = ema20_1h[n1h], e50 = ema50_1h[n1h], e200 = ema200_1h[n1h];
+    const bullAlign = e20 > e50 && e50 > e200;
+    const bearAlign = e20 < e50 && e50 < e200;
+    $('emaStatus').textContent = bullAlign ? '📈 Бычье выравнивание' : bearAlign ? '📉 Медвежье выравнивание' : '↔️ Смешанное';
+    $('emaStatus').style.color = bullAlign ? 'var(--green)' : bearAlign ? 'var(--red)' : 'var(--yellow)';
+    $('emaSub').textContent = `EMA20:${fmt(e20,0)} EMA50:${fmt(e50,0)} EMA200:${fmt(e200,0)}`;
+
+    // BB status
+    const lastClose1h = closes1h[closes1h.length-1];
+    const bbWidth = bb1h.upper[n1h] && bb1h.lower[n1h] ? ((bb1h.upper[n1h] - bb1h.lower[n1h]) / bb1h.middle[n1h] * 100).toFixed(2) : 0;
+    const bbPos = lastClose1h > bb1h.upper[n1h] ? 'выше верхней' : lastClose1h < bb1h.lower[n1h] ? 'ниже нижней' : 'внутри';
+    $('bbStatus').textContent = bbPos === 'внутри' ? '✅ В диапазоне' : bbPos === 'выше верхней' ? '⚠️ Перекуплен' : '⚠️ Перепродан';
+    $('bbStatus').style.color = bbPos === 'внутри' ? 'var(--text)' : 'var(--yellow)';
+    $('bbSub').textContent = `Ширина ${bbWidth}% · ${bbPos}`;
+
+    // VWAP status
+    const lastVwap = vwap1h[vwap1h.length-1];
+    const vwapAbove = lastClose1h > lastVwap;
+    $('vwapStatus').textContent = vwapAbove ? '✅ Выше VWAP' : '⚠️ Ниже VWAP';
+    $('vwapStatus').style.color = vwapAbove ? 'var(--green)' : 'var(--red)';
+    $('vwapSub').textContent = `VWAP: $${fmt(lastVwap, 1)} · Δ ${sign(lastClose1h-lastVwap)}${fmt(lastClose1h-lastVwap, 1)}`;
+
+    // Сигналы 1H
+    const { signals: sig1h, twoGreenIdx } = findSignals1H(c1h, ema20_1h, ema50_1h, rsi1h, bb1h, vwap1h);
+
+    // ── 15M Индикаторы ──
+    const closes15m = c15m.map(c => c.close);
+    const ema9_15m  = calcEMA(closes15m, 9);
+    const ema21_15m = calcEMA(closes15m, 21);
+    const rsi15m    = calcRSI(closes15m, 14);
+    const { signals: sig15m, entrySignals } = findSignals15M(c15m, ema9_15m, ema21_15m, rsi15m);
+
+    // 15M status
+    const lastSig = entrySignals[entrySignals.length - 1];
+    const typeMap = { cross: 'EMA кросс', rsi: 'RSI разворот', green: 'Первая зел.', pin: 'Пин-бар' };
+    $('sig15mStatus').textContent = lastSig ? `✅ ${typeMap[lastSig.type]}` : '😴 Нет сигнала';
+    $('sig15mStatus').style.color = lastSig ? 'var(--green)' : 'var(--text2)';
+    $('sig15mSub').textContent = lastSig ? `Последний сигнал: ${sig15m[0]?.time || '—'}` : 'Ожидаем паттерн';
+
+    // ── Отрисовка графиков ──
+    $('loading1h').style.display  = 'none';
+    $('loading15m').style.display = 'none';
+    $('chart1h').style.display    = 'block';
+    $('chart15m').style.display   = 'block';
+
+    const markers1h = twoGreenIdx.map(i => ({ idx: i, color: '#00d97e', type: 'two_green' }));
+
+    drawCandleChart('chart1h', c1h, {
+      ema20: ema20_1h, ema50: ema50_1h, ema200: ema200_1h,
+      bbUpper: bb1h.upper, bbLower: bb1h.lower, bbMiddle: bb1h.middle,
+      vwap: vwap1h,
+    }, markers1h, rsi1h, macd1h);
+
+    drawCandleChart('chart15m', c15m, {
+      ema9: ema9_15m, ema21: ema21_15m,
+    }, entrySignals, rsi15m, null);
+
+    // ── Логи сигналов ──
+    updateSignalsLog(sig1h, sig15m);
+
+    // ── Время обновления ──
+    $('updateTime').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+  } catch (e) {
+    console.error('loadAndRender:', e);
+    $('updateTime').textContent = 'ошибка: ' + e.message;
+  }
+}
+
+// ═══════════════════════════════════════════
+//   SSE — обновление текущей свечи
+// ═══════════════════════════════════════════
+
+function connectSSE() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ticker') {
+      const t = msg.data;
+      $('symPrice').textContent = '$' + fmt(t.lastPrice, 1);
+      const ch = t.riseFallRate * 100;
+      $('symChange').textContent = sign(ch) + fmt(ch) + '%';
+      $('symChange').className   = 'symbol-change ' + (ch >= 0 ? 'up' : 'down');
+    }
+  };
+  es.onerror = () => setTimeout(connectSSE, 3000);
+}
+
+// ── Запуск ──
+loadAndRender();
+connectSSE();
+setInterval(loadAndRender, 30000); // перерисовка каждые 30 сек
+window.addEventListener('resize', loadAndRender);
+</script>
+</body>
+</html>

@@ -72,6 +72,25 @@ const routes = {
   '/api/open-orders': async (params) => {
     return futures.openOrders(params.symbol || 'BTC_USDT');
   },
+  '/api/klines': async (params) => {
+    const symbol   = params.symbol   || 'BTC_USDT';
+    const interval = params.interval || 'Min60';
+    const limit    = Math.min(parseInt(params.limit) || 200, 500);
+    const url = `https://contract.mexc.com/api/v1/contract/kline/${symbol}?interval=${interval}&limit=${limit}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'klines error');
+    // Преобразуем в массив OHLCV объектов
+    const { time, open, close, high, low, vol } = json.data;
+    return time.map((t, i) => ({
+      time:   t * 1000,
+      open:   open[i],
+      high:   high[i],
+      low:    low[i],
+      close:  close[i],
+      volume: vol[i],
+    }));
+  },
 };
 
 // --- HTTP сервер ---
