@@ -18,12 +18,21 @@ const NAV_LINKS = [
 
 // Получаем версию из сервера (или package.json через API)
 async function getVersion() {
+  // STATIC_VERSION вшивается скриптом inject-version.js при деплое на GitHub Pages
+  const STATIC_VERSION = null; // заменяется автоматически
+
+  // На GitHub Pages — сразу возвращаем статическую версию без запроса
+  const isGitHubPages = location.hostname.includes('github.io');
+  if (isGitHubPages) return STATIC_VERSION;
+
+  // Локально с сервером — берём актуальную из API
   try {
     const r = await fetch('/api/version');
+    if (!r.ok) return STATIC_VERSION;
     const d = await r.json();
-    return d.ok ? d.data.version : null;
+    return d.ok ? d.data.version : STATIC_VERSION;
   } catch {
-    return null;
+    return STATIC_VERSION;
   }
 }
 

@@ -30,6 +30,9 @@ jobs:
         id: date
         run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
+      - name: Вшить версию в layout.js
+        run: node scripts/inject-version.js
+
       - name: Собрать changelog из коммитов
         id: changelog
         run: |
@@ -51,20 +54,17 @@ jobs:
             -m "Release v${{ steps.version.outputs.version }}" 2>/dev/null || echo "Тег уже существует"
           git push origin "v${{ steps.version.outputs.version }}" 2>/dev/null || echo "Тег уже запушен"
 
-      - name: Сгенерировать release notes в файл
+      - name: Сгенерировать release notes
         run: |
-          cat > /tmp/release_notes.md << 'NOTES'
+          cat > /tmp/release_notes.md << NOTES
           ## mexc-sdk-js v${{ steps.version.outputs.version }}
 
           ### Что изменилось
           ${{ steps.changelog.outputs.commits }}
 
           ### Установка
-          ```
           git clone https://github.com/weidali/mexc-sdk-js.git
-          cd mexc-sdk-js
-          npm install
-          ```
+          cd mexc-sdk-js && npm install
 
           ### Документация
           https://weidali.github.io/mexc-sdk-js
@@ -86,9 +86,3 @@ jobs:
           path: docs/
 
       - uses: actions/deploy-pages@v4
-
-# ```bash
-#             git clone https://github.com/weidali/mexc-sdk-js.git
-#             cd mexc-sdk-js
-#             npm install
-# ```

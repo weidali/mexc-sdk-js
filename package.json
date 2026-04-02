@@ -11,7 +11,9 @@
     "futures": "node --env-file=.env examples/futures.js",
     "ws": "node --env-file=.env examples/ws.js",
     "serve": "node --env-file=.env scripts/serve.js",
-    "dev": "node scripts/serve.js & node --env-file=.env examples/ws.js"
+    "dev": "node scripts/serve.js & node --env-file=.env examples/ws.js",
+    "inject-version": "node scripts/inject-version.js",
+    "prebuild": "npm run inject-version"
   },
   "dependencies": {
     "ws": "^8.18.0"
