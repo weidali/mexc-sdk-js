@@ -221,7 +221,7 @@
       <div class="ind-sub" id="vwapSub">загрузка...</div>
     </div>
     <div class="ind-card">
-      <div class="ind-label">Сигналы 15M</div>
+      <div class="ind-label">Swing Zone (Fibonacci)</div>
       <div class="ind-value" style="font-size:13px;font-weight:600" id="sig15mStatus">—</div>
       <div class="ind-sub" id="sig15mSub">загрузка...</div>
     </div>
@@ -247,10 +247,14 @@
       <div class="legend">
         <div class="legend-item"><div class="legend-line" style="background:#f5c542"></div>EMA20</div>
         <div class="legend-item"><div class="legend-line" style="background:#3d8ef5"></div>EMA50</div>
+        <div class="legend-item"><div class="legend-line" style="background:#00b4d8"></div>EMA55</div>
         <div class="legend-item"><div class="legend-line" style="background:#a78bfa"></div>EMA200</div>
         <div class="legend-item"><div class="legend-line" style="background:rgba(61,142,245,.3);height:6px;border-radius:2px"></div>BB</div>
         <div class="legend-item"><div class="legend-line" style="background:rgba(247,147,26,.6)"></div>VWAP</div>
-        <div class="legend-item"><div class="legend-dot" style="background:var(--green);opacity:.8"></div>2 зел. подряд</div>
+        <div class="legend-item" style="background:rgba(245,197,66,0.08);padding:2px 6px;border-radius:3px;border:1px solid rgba(245,197,66,0.2)"><span style="font-size:9px;color:#f5c542">Fib 0.5 / 0.618</span></div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(247,147,26,0.8)"></div>VOL POC</div>
+        <div class="legend-item"><div class="legend-line" style="background:#ff4d6a"></div>SL</div>
+        <div class="legend-item"><div class="legend-line" style="background:#00d97e"></div>TP</div>
       </div>
     </div>
 
@@ -536,6 +540,194 @@ function scoreConfluence(factors) {
 }
 
 // ─── 1H: Тренд + паттерны с фильтрацией ────────────────────────────────────
+
+// ═══════════════════════════════════════════
+//   SWING TRADING — FIBONACCI + VOLUME
+// ═══════════════════════════════════════════
+
+// Находит последний значимый swing high/low для Fibonacci
+function findSwingPoints(candles, lookback = 30) {
+  const n = candles.length - 1;
+  const slice = candles.slice(Math.max(0, n - lookback), n);
+
+  let swingHigh = { idx: 0, price: -Infinity };
+  let swingLow  = { idx: 0, price:  Infinity };
+
+  for (let i = 2; i < slice.length - 2; i++) {
+    const c = slice[i];
+    // Swing high: выше 2 свечей слева и справа
+    if (c.high > slice[i-1].high && c.high > slice[i-2].high &&
+        c.high > slice[i+1].high && c.high > slice[i+2].high) {
+      if (c.high > swingHigh.price) swingHigh = { idx: i, price: c.high };
+    }
+    // Swing low: ниже 2 свечей слева и справа
+    if (c.low < slice[i-1].low && c.low < slice[i-2].low &&
+        c.low < slice[i+1].low && c.low < slice[i+2].low) {
+      if (c.low < swingLow.price) swingLow = { idx: i, price: c.low };
+    }
+  }
+  return { swingHigh, swingLow };
+}
+
+// Рассчитывает уровни Fibonacci retracement между двумя точками
+function calcFibLevels(low, high) {
+  const range = high - low;
+  return {
+    f0:    high,                    // 0% — swing high
+    f236:  high - range * 0.236,   // 23.6%
+    f382:  high - range * 0.382,   // 38.2% — первая зона
+    f500:  high - range * 0.500,   // 50.0% — золотой карман
+    f618:  high - range * 0.618,   // 61.8% — золотой карман
+    f786:  high - range * 0.786,   // 78.6% — глубокий откат
+    f100:  low,                    // 100% — swing low
+    // Расширения (таргеты)
+    e1272: high + range * 0.272,   // 127.2% extension
+    e1618: high + range * 0.618,   // 161.8% extension
+  };
+}
+
+// Проверяет находится ли цена в зоне Fibonacci (golden pocket)
+function inFibZone(price, fib, zone = 'golden') {
+  if (zone === 'golden') {
+    // Золотой карман: 0.382 – 0.618
+    return price >= fib.f618 * 0.999 && price <= fib.f382 * 1.001;
+  }
+  if (zone === 'shallow') {
+    // Мелкий откат: 0.236 – 0.382 (сильный тренд)
+    return price >= fib.f382 * 0.999 && price <= fib.f236 * 1.001;
+  }
+  if (zone === 'deep') {
+    // Глубокий откат: 0.618 – 0.786
+    return price >= fib.f786 * 0.999 && price <= fib.f618 * 1.001;
+  }
+  return false;
+}
+
+// Volume Profile — упрощённый: POC (Point of Control) за N свечей
+function calcVolumeProfile(candles, lookback = 50) {
+  const slice = candles.slice(-lookback);
+  const allLow  = Math.min(...slice.map(c => c.low));
+  const allHigh = Math.max(...slice.map(c => c.high));
+  const buckets = 20;
+  const bucketSize = (allHigh - allLow) / buckets;
+  const volBuckets = new Array(buckets).fill(0);
+
+  for (const c of slice) {
+    const centerPrice = (c.high + c.low) / 2;
+    const idx = Math.min(Math.floor((centerPrice - allLow) / bucketSize), buckets - 1);
+    volBuckets[idx] += c.volume;
+  }
+
+  const maxVol = Math.max(...volBuckets);
+  const pocIdx = volBuckets.indexOf(maxVol);
+  const poc    = allLow + (pocIdx + 0.5) * bucketSize;
+
+  // VAH/VAL (Value Area High/Low — 70% объёма)
+  const totalVol = volBuckets.reduce((s, v) => s + v, 0);
+  const target   = totalVol * 0.7;
+  let   cumVol   = maxVol;
+  let   lo = pocIdx, hi = pocIdx;
+
+  while (cumVol < target && (lo > 0 || hi < buckets - 1)) {
+    const addLo = lo > 0          ? volBuckets[lo - 1] : 0;
+    const addHi = hi < buckets - 1 ? volBuckets[hi + 1] : 0;
+    if (addLo >= addHi && lo > 0)          { lo--; cumVol += addLo; }
+    else if (addHi > 0 && hi < buckets - 1) { hi++; cumVol += addHi; }
+    else break;
+  }
+
+  return {
+    poc,
+    vah: allLow + (hi + 1) * bucketSize,
+    val: allLow + lo * bucketSize,
+  };
+}
+
+// ── Главная функция свинг-анализа ──────────────────────────────────────────
+function analyzeSwing(candles, ema55, rsi, atr) {
+  const n      = candles.length - 1;
+  const close  = candles[n].close;
+  const signals = [];
+  const fibLevels = null; // будет возвращён для отрисовки
+
+  if (n < 35) return { signals, fib: null, vp: null, swingZone: null };
+
+  // Находим swing points для Fibonacci
+  const { swingHigh, swingLow } = findSwingPoints(candles, 40);
+
+  // Строим Fib только если swing high позже swing low (восходящий импульс → откат)
+  let fib = null;
+  let swingZone = null;
+
+  if (swingHigh.idx > swingLow.idx && swingHigh.price > swingLow.price) {
+    fib = calcFibLevels(swingLow.price, swingHigh.price);
+
+    // Определяем в какой зоне сейчас цена
+    // Только зоны 0.5 и 0.618
+    const at618 = close >= fib.f618 * 0.999 && close <= fib.f618 * 1.003;
+    const at500 = close >= fib.f500 * 0.999 && close <= fib.f500 * 1.003;
+    const between = close >= fib.f618 * 0.999 && close <= fib.f500 * 1.001;
+    if (at618)    swingZone = { name: 'Fib 0.618 — точка входа', quality: 'strong', color: '#f5c542' };
+    else if (at500) swingZone = { name: 'Fib 0.5 — зона покупки',  quality: 'strong', color: '#f5c542' };
+    else if (between) swingZone = { name: 'Fib 0.5–0.618 зона',    quality: 'strong', color: '#f5c542' };
+
+    // Сигнал: цена в Fib зоне + подтверждение
+    if (swingZone && rsi[n] && atr[n]) {
+      const { score, reasons } = scoreConfluence([
+        { active: rsi[n] < 50 && rsi[n] > 35,          label: `RSI ${rsi[n].toFixed(0)} (откат)`       },
+        { active: ema55[n] && close > ema55[n],          label: 'выше EMA55'                             },
+        { active: rsi[n] > rsi[n-1] && rsi[n-1] > rsi[n-2], label: 'RSI разворачивается'               },
+        { active: candles[n].close > candles[n].open,    label: 'бычья свеча'                           },
+        { active: candles[n].volume > avgVol(candles, n) * 1.1, label: 'объём растёт'                  },
+        { active: swingZone.quality === 'strong',         label: swingZone.name                          },
+      ]);
+
+      if (score >= 3) {
+        const time = new Date(candles[n].time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+        signals.push({
+          type: 'SWING_FIB',
+          text: `SWING: ${swingZone.name} [${score}/6] · ${reasons.slice(0,2).join(', ')}`,
+          time, strength: score >= 5 ? 'strong' : 'medium',
+          icon: '🌊', idx: n,
+        });
+      }
+    }
+  }
+
+  // Volume Profile
+  const vp = calcVolumeProfile(candles, 60);
+
+  // Сигнал: цена у POC/VAL + разворот
+  if (vp && rsi[n] && Math.abs(close - vp.poc) / vp.poc < 0.003) {
+    if (candles[n].close > candles[n].open && rsi[n] > 42 && rsi[n] < 58) {
+      const time = new Date(candles[n].time).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+      signals.push({
+        type: 'VOL_PROFILE_POC',
+        text: `SWING: Отскок от POC $${Math.round(vp.poc)} [Volume Profile]`,
+        time, strength: 'medium', icon: '📊', idx: n,
+      });
+    }
+  }
+
+  return { signals, fib, vp, swingZone };
+}
+
+// ATR-based Stop Loss и Take Profit для свинга
+function calcSwingRiskLevels(candles, fib, atr) {
+  const n     = candles.length - 1;
+  const close = candles[n].close;
+  if (!atr[n]) return null;
+
+  const sl = fib ? fib.f786 - atr[n] * 0.5           // стоп ниже 78.6% + 0.5 ATR буфер
+                 : close - atr[n] * 2;                 // или 2 ATR от текущей цены
+  const tp1 = fib ? fib.f0                            // TP1 — предыдущий swing high
+                  : close + atr[n] * 3;
+  const tp2 = fib ? fib.e1272 : close + atr[n] * 5;  // TP2 — 127.2% extension
+
+  const rr = tp1 && sl ? (tp1 - close) / (close - sl) : 0;
+
+  return { sl, tp1, tp2, rr: rr.toFixed(2) };
+}
 
 function findSignals1H(candles, ema20, ema50, rsi, bb, vwap) {
   const signals     = [];
@@ -904,6 +1096,7 @@ function drawCandleChart(canvasId, candles, overlays = {}, markers = [], rsiData
   const emaStyles = [
     { key: 'ema20',  color: '#f5c542', w: 1.5 },
     { key: 'ema50',  color: '#3d8ef5', w: 1.5 },
+    { key: 'ema55',  color: '#00b4d8', w: 1.5 },  // EMA55 — свинг
     { key: 'ema200', color: '#a78bfa', w: 2 },
     { key: 'ema9',   color: '#f5c542', w: 1.5 },
     { key: 'ema21',  color: '#3d8ef5', w: 1.5 },
@@ -915,6 +1108,60 @@ function drawCandleChart(canvasId, candles, overlays = {}, markers = [], rsiData
     overlays[key].forEach((v, i) => { if (!v) return; first ? ctx.moveTo(xOf(i), yOf(v)) : ctx.lineTo(xOf(i), yOf(v)); first = false; });
     ctx.stroke();
   });
+
+  // --- Fibonacci Retracement ---
+  if (overlays.fib && candles[0]?.time) {
+    const fib = overlays.fib;
+    const fibLevels = [
+      { price: fib.f500, label: '0.5',  color: 'rgba(245,197,66,0.9)', dash: [3,2] },
+      { price: fib.f618, label: '0.618', color: 'rgba(245,197,66,0.7)', dash: [4,3] },
+    ];
+
+    // Зона 0.5–0.618 — заливка
+    if (fib.f500 >= minP && fib.f618 <= maxP) {
+      ctx.fillStyle = 'rgba(245,197,66,0.07)';
+      const y500 = yOf(fib.f500), y618 = yOf(fib.f618);
+      ctx.fillRect(padL, y500, cW, y618 - y500);
+    }
+
+    fibLevels.forEach(({ price, label, color, dash }) => {
+      if (price < minP || price > maxP) return;
+      const y = yOf(price);
+      ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash(dash);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + cW, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(`Fib ${label}`, padL + 3, y - 2);
+    });
+  }
+
+  // --- Volume Profile (POC/VAH/VAL) ---
+  if (overlays.vp) {
+    const { poc, vah, val } = overlays.vp;
+    [[poc, 'POC', 'rgba(247,147,26,0.9)', []], [vah, 'VAH', 'rgba(247,147,26,0.4)', [3,3]], [val, 'VAL', 'rgba(247,147,26,0.4)', [3,3]]].forEach(([price, label, color, dash]) => {
+      if (price < minP || price > maxP) return;
+      const y = yOf(price);
+      ctx.strokeStyle = color; ctx.lineWidth = label === 'POC' ? 1.5 : 1; ctx.setLineDash(dash);
+      ctx.beginPath(); ctx.moveTo(padL + cW * 0.7, y); ctx.lineTo(padL + cW, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color; ctx.font = '9px JetBrains Mono'; ctx.textAlign = 'right';
+      ctx.fillText(label, padL + cW - 2, y - 2);
+    });
+  }
+
+  // --- SL / TP линии ---
+  if (overlays.riskLevels) {
+    const { sl, tp1, tp2 } = overlays.riskLevels;
+    [[sl, 'SL', '#ff4d6a'], [tp1, 'TP1', '#00d97e'], [tp2, 'TP2', 'rgba(0,217,126,0.5)']].forEach(([price, label, color]) => {
+      if (!price || price < minP || price > maxP) return;
+      const y = yOf(price);
+      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([6,3]);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + cW, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = color; ctx.font = 'bold 9px JetBrains Mono'; ctx.textAlign = 'left';
+      ctx.fillText(`${label} $${Math.round(price)}`, padL + 3, y - 2);
+    });
+  }
 
   // --- Свечи ---
   candles.forEach((c, i) => {
@@ -1150,11 +1397,13 @@ async function loadAndRender() {
     const closes1h  = c1h_full.map(c => c.close);
     const ema20_1h  = calcEMA(closes1h, 20);
     const ema50_1h  = calcEMA(closes1h, 50);
+    const ema55_1h  = calcEMA(closes1h, 55);  // для свинг-торговли
     const ema200_1h = calcEMA(closes1h, 200);
     const rsi1h     = calcRSI(closes1h, 14);
     const macd1h    = calcMACD(closes1h);
     const bb1h      = calcBB(closes1h, 20);
     const vwap1h    = calcVWAP(c1h_full);
+    const atr1h     = calcATR(c1h_full, 14);
 
     // Slice индикаторов до размера графика
     const sl1h = (arr) => arr ? arr.slice(-SHOW_1H) : arr;
@@ -1221,6 +1470,20 @@ async function loadAndRender() {
     const offset1h = c1h_full.length - SHOW_1H;
     const twoGreenIdx = twoGreenIdxFull.filter(i => i >= offset1h).map(i => i - offset1h);
 
+    // ── Swing Analysis (на полном массиве 1H) ──
+    const swing1h = analyzeSwing(c1h_full, ema55_1h, rsi1h, atr1h);
+    const riskLevels = swing1h.fib ? calcSwingRiskLevels(c1h_full, swing1h.fib, atr1h) : null;
+
+    // Обновляем swing индикатор карточку
+    if (swing1h.swingZone) {
+      $('sig15mStatus').textContent = `🌊 ${swing1h.swingZone.name}`;
+      $('sig15mStatus').style.color = swing1h.swingZone.color;
+      const rr = riskLevels ? ` · R/R ${riskLevels.rr}:1` : '';
+      $('sig15mSub').textContent = riskLevels
+        ? `SL: $${Math.round(riskLevels.sl)} · TP1: $${Math.round(riskLevels.tp1)} · TP2: $${Math.round(riskLevels.tp2)}${rr}`
+        : 'Вне Fibonacci зоны';
+    }
+
     // ── 15M Индикаторы (на полном массиве 300 свечей) ──
     const closes15m = c15m_full.map(c => c.close);
     const ema9_15m  = calcEMA(closes15m, 9);
@@ -1250,11 +1513,15 @@ async function loadAndRender() {
     drawCandleChart('chart1h', c1h, {
       ema20:   sl1h(ema20_1h),
       ema50:   sl1h(ema50_1h),
+      ema55:   sl1h(ema55_1h),
       ema200:  sl1h(ema200_1h),
       bbUpper: sl1h(bb1h.upper),
       bbLower: sl1h(bb1h.lower),
       bbMiddle:sl1h(bb1h.middle),
       vwap:    sl1h(vwap1h),
+      fib:     swing1h.fib,        // Fibonacci уровни
+      vp:      swing1h.vp,         // Volume Profile POC/VAH/VAL
+      riskLevels,                  // SL/TP линии
     }, markers1h, sl1h(rsi1h), { macd: sl1h(macd1h.macd), signal: sl1h(macd1h.signal), hist: sl1h(macd1h.hist) });
 
     drawCandleChart('chart15m', c15m, {
@@ -1263,7 +1530,7 @@ async function loadAndRender() {
     }, entrySignals, sl15m(rsi15m), null);
 
     // ── Логи сигналов ──
-    updateSignalsLog(sig1h, sig15m);
+    updateSignalsLog([...sig1h, ...swing1h.signals], sig15m);
 
     // ── Время обновления ──
     $('updateTime').textContent = 'обновлено ' + new Date().toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
